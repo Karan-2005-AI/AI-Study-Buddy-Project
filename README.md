@@ -1,14 +1,23 @@
----
-title: Ai Study Buddy
-emoji: 🦀
-colorFrom: red
-colorTo: green
-sdk: gradio
-sdk_version: 6.18.0
-python_version: '3.13'
-app_file: app.py
-pinned: false
-license: mit
----
+# AI Study Buddy
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+An AI-powered educational assistant built using Google's Gemini AI.
+
+## Features
+
+* Concept Explainer
+* Notes Summarizer
+* Quiz Generator
+
+## Technology Stack
+
+* Python
+* Gemini AI
+* Gradio
+
+## Developed By
+
+Karan Dewangan
+
+## Internship Project
+
+AICTE / IBM SkillsBuild Internship
