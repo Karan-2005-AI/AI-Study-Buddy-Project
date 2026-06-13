@@ -1,10 +1,10 @@
 ---
 title: AI Study Buddy
-emoji: 🤖
+emoji: 📚
 colorFrom: blue
 colorTo: purple
 sdk: gradio
-sdk_version: 6.18.0
+sdk_version: "6.18.0"
 app_file: app.py
 pinned: false
 ---
