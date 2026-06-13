@@ -7,6 +7,7 @@ An AI-powered educational assistant built using Google's Gemini AI.
 * Concept Explainer
 * Notes Summarizer
 * Quiz Generator
+* personal tutor
 
 ## Technology Stack
 
