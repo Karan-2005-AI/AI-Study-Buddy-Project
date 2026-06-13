@@ -11,4 +11,4 @@ def chat(message, history):
 
 demo = gr.ChatInterface(fn=chat)
 
-demo.launch())
+demo.launch()
