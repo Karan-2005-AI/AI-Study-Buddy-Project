@@ -1,23 +1,10 @@
-# AI Study Buddy
-
-An AI-powered educational assistant built using Google's Gemini AI.
-
-## Features
-
-* Concept Explainer
-* Notes Summarizer
-* Quiz Generator
-
-## Technology Stack
-
-* Python
-* Gemini AI
-* Gradio
-
-## Developed By
-
-Karan Dewangan
-
-## Internship Project
-
-AICTE / IBM SkillsBuild Internship
+---
+title: AI Study Buddy
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 4.19.2
+app_file: app.py
+pinned: false
+---
