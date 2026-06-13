@@ -9,6 +9,4 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 def chat(prompt):
     return model.generate_content(prompt).text
 
-demo = gr.Interface(fn=chat, inputs="text", outputs="text")
-
-demo.launch()
+gr.Interface(fn=chat, inputs="text", outputs="text").launch()
