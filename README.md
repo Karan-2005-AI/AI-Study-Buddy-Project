@@ -13,6 +13,7 @@ An AI-powered educational assistant built using Google's Gemini AI.
 * Python
 * Gemini AI
 * Gradio
+* hugging face
 
 ## Developed By
 
