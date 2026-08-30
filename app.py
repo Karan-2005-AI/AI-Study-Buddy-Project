@@ -2,7 +2,7 @@ import gradio as gr
 from google import genai
 import os
 
-# Gemini API Key
+# Gemini API Key 
 
 API_KEY = "PASTE_YOUR_API_KEY_HERE"
 
