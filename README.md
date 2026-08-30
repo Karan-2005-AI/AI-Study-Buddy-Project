@@ -22,4 +22,4 @@ Karan Dewangan
 
 ## Internship Project
 
-AICTE / IBM SkillsBuild Internship
+ Lenovo Leap BharatCares Internship
