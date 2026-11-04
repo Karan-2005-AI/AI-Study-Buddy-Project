@@ -17,7 +17,7 @@ st.set_page_config(
 # ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-2.5-flash"
 
 if API_KEY:
     genai.configure(api_key=API_KEY)
