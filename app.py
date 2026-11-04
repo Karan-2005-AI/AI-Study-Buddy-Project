@@ -1,7 +1,6 @@
 import streamlit as st
 import os
-import requests
-import json
+import google.generativeai as genai
 
 # ==========================================
 # PAGE CONFIG
@@ -19,8 +18,9 @@ st.set_page_config(
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = "gemini-1.5-flash"
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-GEMINI_STREAM_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent"
+
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -39,62 +39,29 @@ Always be helpful, conversational, and supportive — just like a real study bud
 
 
 def gemini_generate(prompt, history=None):
-    contents = []
+    gemini_history = []
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": contents,
-    }
-    response = requests.post(
-        GEMINI_URL,
-        headers={"Content-Type": "application/json"},
-        params={"key": API_KEY},
-        json=payload,
-        timeout=60,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+            gemini_history.append({"role": role, "parts": [msg["content"]]})
+    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
+    chat = model.start_chat(history=gemini_history)
+    response = chat.send_message(prompt)
+    return response.text
 
 
 def gemini_stream(prompt, history=None):
-    contents = []
+    gemini_history = []
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": contents,
-    }
-    with requests.post(
-        GEMINI_STREAM_URL,
-        headers={"Content-Type": "application/json"},
-        params={"key": API_KEY, "alt": "sse"},
-        json=payload,
-        stream=True,
-        timeout=60,
-    ) as response:
-        response.raise_for_status()
-        for line in response.iter_lines():
-            if line:
-                line = line.decode("utf-8")
-                if line.startswith("data: "):
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        text = data["candidates"][0]["content"]["parts"][0].get("text", "")
-                        if text:
-                            yield text
-                    except (KeyError, json.JSONDecodeError):
-                        continue
+            gemini_history.append({"role": role, "parts": [msg["content"]]})
+    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
+    chat = model.start_chat(history=gemini_history)
+    stream = chat.send_message(prompt, stream=True)
+    for chunk in stream:
+        if chunk.text:
+            yield chunk.text
 
 
 # ==========================================
