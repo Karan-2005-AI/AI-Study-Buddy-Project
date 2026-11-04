@@ -18,7 +18,7 @@ st.set_page_config(
 # ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-1.5-flash"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 GEMINI_STREAM_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent"
 
