@@ -96,12 +96,18 @@ with tab1:
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "pending_prompt" not in st.session_state:
+        st.session_state.pending_prompt = None
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ask me anything..."):
+    # Get prompt from chat input OR from example button
+    prompt = st.chat_input("Ask me anything...") or st.session_state.pending_prompt
+    st.session_state.pending_prompt = None  # clear after reading
+
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -134,7 +140,7 @@ with tab1:
     cols = st.columns(2)
     for i, ex in enumerate(examples):
         if cols[i % 2].button(ex, key=f"ex_{i}"):
-            st.session_state.messages.append({"role": "user", "content": ex})
+            st.session_state.pending_prompt = ex
             st.rerun()
 
 # ======================================
