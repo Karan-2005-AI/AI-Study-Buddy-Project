@@ -2,10 +2,8 @@ import streamlit as st
 import os
 import base64
 import io
-import requests as http_requests
 from PIL import Image
 import google.generativeai as genai
-from groq import Groq
 
 # ==========================================
 # PAGE CONFIG
@@ -22,16 +20,13 @@ st.set_page_config(
 # ==========================================
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_KEY   = os.getenv("GROQ_API_KEY")
 
-GROQ_MODEL      = "llama-3.1-8b-instant"
+CHAT_MODEL      = "gemini-2.5-flash-lite"
 IMAGE_GEN_MODEL = "gemini-2.5-flash-image"
-IMAGE_VIS_MODEL = "gemini-2.5-flash"
+IMAGE_VIS_MODEL = "gemini-2.5-flash-lite"
 
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-
-groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -53,36 +48,26 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # HELPER FUNCTIONS
 # ==========================================
 
-def groq_stream(prompt, history=None):
-    """Stream text response via Groq (unlimited free tier)."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+def gemini_stream(prompt, history=None):
+    """Stream text response via Gemini."""
+    gemini_history = []
     if history:
         for msg in history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-    messages.append({"role": "user", "content": prompt})
-    stream = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
-        stream=True,
-    )
+            role = "user" if msg["role"] == "user" else "model"
+            gemini_history.append({"role": role, "parts": [msg["content"]]})
+    model = genai.GenerativeModel(CHAT_MODEL, system_instruction=SYSTEM_PROMPT)
+    chat = model.start_chat(history=gemini_history)
+    stream = chat.send_message(prompt, stream=True)
     for chunk in stream:
-        text = chunk.choices[0].delta.content
-        if text:
-            yield text
+        if chunk.text:
+            yield chunk.text
 
 
-def groq_generate(prompt, history=None):
-    """Single text response via Groq."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if history:
-        for msg in history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-    messages.append({"role": "user", "content": prompt})
-    response = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
-    )
-    return response.choices[0].message.content
+def gemini_generate(prompt):
+    """Single text response via Gemini."""
+    model = genai.GenerativeModel(CHAT_MODEL, system_instruction=SYSTEM_PROMPT)
+    response = model.generate_content(prompt)
+    return response.text
 
 
 def gemini_analyze_image(image_bytes, prompt):
@@ -113,16 +98,13 @@ def gemini_generate_image(prompt):
 st.markdown("""
 <div style="text-align:center; padding: 10px 0 20px 0;">
     <h1>🎓 AI Study Buddy</h1>
-    <p style="color: #666;">Your intelligent AI-powered study assistant — powered by Groq + Google Gemini</p>
+    <p style="color: #666;">Your intelligent AI-powered study assistant — powered by Google Gemini</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Show warnings if keys missing
-if not GROQ_KEY:
-    st.error("⚠️ **GROQ_API_KEY** is not set. Add it in Space Settings → Variables and secrets.")
-    st.stop()
 if not GEMINI_KEY:
-    st.warning("⚠️ **GEMINI_API_KEY** not set — Image Generator & Image Analyzer will not work. Other features work fine.")
+    st.error("⚠️ **GEMINI_API_KEY** is not set. Go to Space Settings → Variables and secrets → New secret.")
+    st.stop()
 
 # ==========================================
 # TABS
@@ -166,7 +148,7 @@ with tab1:
             response_placeholder = st.empty()
             full_response = ""
             try:
-                for chunk in groq_stream(prompt, st.session_state.messages[:-1]):
+                for chunk in gemini_stream(prompt, st.session_state.messages[:-1]):
                     full_response += chunk
                     response_placeholder.markdown(full_response + "▌")
                 response_placeholder.markdown(full_response)
@@ -280,7 +262,7 @@ with tab4:
         if topic.strip():
             with st.spinner("Explaining..."):
                 try:
-                    result = groq_generate(f"""Explain this topic in simple and easy English for engineering students.
+                    result = gemini_generate(f"""Explain this topic in simple and easy English for engineering students.
 
 Topic: {topic}
 
@@ -308,7 +290,7 @@ with tab5:
         if notes.strip():
             with st.spinner("Summarizing..."):
                 try:
-                    result = groq_generate(f"""Summarize these study notes for an engineering student.
+                    result = gemini_generate(f"""Summarize these study notes for an engineering student.
 
 Use:
 - Short bullet points
@@ -337,7 +319,7 @@ with tab6:
         if quiz_topic.strip():
             with st.spinner("Generating quiz..."):
                 try:
-                    result = groq_generate(f"""Create 5 multiple-choice questions about: {quiz_topic}
+                    result = gemini_generate(f"""Create 5 multiple-choice questions about: {quiz_topic}
 
 For each question provide:
 **Q1.** Question text
@@ -377,7 +359,7 @@ with tab7:
         if problem.strip():
             with st.spinner("Solving..."):
                 try:
-                    result = groq_generate(f"""You are an expert programming tutor helping an engineering student.
+                    result = gemini_generate(f"""You are an expert programming tutor helping an engineering student.
 
 Language: {language}
 Problem: {problem}
