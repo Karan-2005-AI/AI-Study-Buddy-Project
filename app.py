@@ -24,7 +24,7 @@ st.set_page_config(
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_KEY   = os.getenv("GROQ_API_KEY")
 
-GROQ_MODEL      = "llama-3.3-70b-versatile"
+GROQ_MODEL      = "llama-3.1-8b-instant"
 IMAGE_GEN_MODEL = "gemini-2.5-flash-image"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
 
