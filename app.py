@@ -1,6 +1,5 @@
 import gradio as gr
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 import os
 
 # ==========================================
@@ -12,9 +11,9 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is not set.")
 
-client = genai.Client(api_key=API_KEY)
+genai.configure(api_key=API_KEY)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-1.5-flash"
 
 # ==========================================
 # SYSTEM PROMPT — Study Buddy Personality
@@ -49,40 +48,28 @@ def chat_stream(user_message, history):
         yield history, ""
         return
 
-    # Build conversation contents for Gemini
-    contents = []
+    # Build conversation history for Gemini
+    gemini_history = []
     for msg in history:
         role = "user" if msg["role"] == "user" else "model"
-        contents.append(types.Content(
-            role=role,
-            parts=[types.Part(text=msg["content"])]
-        ))
+        gemini_history.append({"role": role, "parts": [msg["content"]]})
 
-    # Add current user message
-    contents.append(types.Content(
-        role="user",
-        parts=[types.Part(text=user_message)]
-    ))
-
-    # Add user message to history immediately
+    # Add user message to display history immediately
     history = history + [{"role": "user", "content": user_message}]
 
     # Stream the response
     full_response = ""
     try:
-        stream = client.models.generate_content_stream(
-            model=MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.7,
-            )
+        model = genai.GenerativeModel(
+            model_name=MODEL,
+            system_instruction=SYSTEM_PROMPT,
         )
+        chat = model.start_chat(history=gemini_history)
+        stream = chat.send_message(user_message, stream=True)
 
         for chunk in stream:
             if chunk.text:
                 full_response += chunk.text
-                # Yield updated history with streaming assistant message
                 current_history = history + [{"role": "assistant", "content": full_response}]
                 yield current_history, ""
 
@@ -110,9 +97,8 @@ def explain_topic(topic):
         return "Please enter a topic."
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""
+        model = genai.GenerativeModel(MODEL)
+        response = model.generate_content(f"""
 Explain this topic in simple and easy English for engineering students.
 
 Topic: {topic}
@@ -124,8 +110,7 @@ Give:
 - Short conclusion
 
 Use markdown formatting with bold headings and bullet points.
-"""
-        )
+""")
         return response.text
 
     except Exception as e:
@@ -141,9 +126,8 @@ def summarize_notes(notes):
         return "Please paste your notes."
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""
+        model = genai.GenerativeModel(MODEL)
+        response = model.generate_content(f"""
 Summarize these study notes for an engineering student.
 
 Use:
@@ -156,8 +140,7 @@ Do not add information that is not in the notes.
 
 Notes:
 {notes}
-"""
-        )
+""")
         return response.text
 
     except Exception as e:
@@ -173,9 +156,8 @@ def generate_quiz(topic):
         return "Please enter a topic."
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""
+        model = genai.GenerativeModel(MODEL)
+        response = model.generate_content(f"""
 Create 5 multiple-choice questions about: {topic}
 
 For each question provide:
@@ -195,8 +177,7 @@ After all 5 questions, provide:
 
 Keep the questions suitable for engineering students.
 Use markdown formatting.
-"""
-        )
+""")
         return response.text
 
     except Exception as e:
@@ -214,9 +195,8 @@ def help_with_code(language, problem):
     lang = language if language else "any language"
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""
+        model = genai.GenerativeModel(MODEL)
+        response = model.generate_content(f"""
 You are an expert programming tutor helping an engineering student.
 
 Language: {lang}
@@ -229,8 +209,7 @@ Provide:
 4. Time/space complexity if relevant
 
 Use proper markdown code blocks.
-"""
-        )
+""")
         return response.text
 
     except Exception as e:
@@ -278,7 +257,6 @@ with gr.Blocks(
             height=500,
             type="messages",
             show_copy_button=True,
-            avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=studybuddy"),
             bubble_full_width=False,
         )
 
@@ -295,7 +273,6 @@ with gr.Blocks(
         with gr.Row():
             clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
 
-        # Example prompts
         gr.Examples(
             examples=[
                 "Explain machine learning in simple words",
@@ -309,7 +286,6 @@ with gr.Blocks(
             label="💡 Try these examples:",
         )
 
-        # Streaming chat submission
         send_btn.click(
             fn=chat_stream,
             inputs=[chat_input, chatbot],
@@ -339,7 +315,6 @@ with gr.Blocks(
         )
 
         explain_btn = gr.Button("Explain Topic ✨", variant="primary")
-
         explanation = gr.Markdown(label="Explanation")
 
         explain_btn.click(fn=explain_topic, inputs=topic, outputs=explanation)
@@ -360,7 +335,6 @@ with gr.Blocks(
         )
 
         summarize_btn = gr.Button("Summarize Notes 📋", variant="primary")
-
         summary = gr.Markdown(label="Summary")
 
         summarize_btn.click(fn=summarize_notes, inputs=notes, outputs=summary)
@@ -379,14 +353,13 @@ with gr.Blocks(
         )
 
         quiz_btn = gr.Button("Generate Quiz 🎯", variant="primary")
-
         quiz = gr.Markdown(label="Quiz")
 
         quiz_btn.click(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
         quiz_topic.submit(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
 
     # ======================================
-    # TAB 5: CODE HELPER (NEW)
+    # TAB 5: CODE HELPER
     # ======================================
 
     with gr.Tab("💻 Code Helper"):
@@ -408,7 +381,6 @@ with gr.Blocks(
             )
 
         code_btn = gr.Button("Solve It 🔧", variant="primary")
-
         code_output = gr.Markdown(label="Solution")
 
         code_btn.click(fn=help_with_code, inputs=[code_language, code_problem], outputs=code_output)
