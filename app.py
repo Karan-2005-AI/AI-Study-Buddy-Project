@@ -1,6 +1,9 @@
 import streamlit as st
 import os
+import base64
 import google.generativeai as genai
+from PIL import Image
+import io
 
 # ==========================================
 # PAGE CONFIG
@@ -17,7 +20,9 @@ st.set_page_config(
 # ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = "gemini-2.5-flash"
+
+CHAT_MODEL     = "gemini-2.5-flash"
+IMAGE_GEN_MODEL = "gemini-2.5-flash-image"
 
 if API_KEY:
     genai.configure(api_key=API_KEY)
@@ -38,30 +43,49 @@ You were built by Karan Dewangan, a B.Tech CS (AIML) student at Chouksey Enginee
 Always be helpful, conversational, and supportive — just like a real study buddy!"""
 
 
-def gemini_generate(prompt, history=None):
-    gemini_history = []
-    if history:
-        for msg in history:
-            role = "user" if msg["role"] == "user" else "model"
-            gemini_history.append({"role": role, "parts": [msg["content"]]})
-    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
-    chat = model.start_chat(history=gemini_history)
-    response = chat.send_message(prompt)
-    return response.text
-
-
 def gemini_stream(prompt, history=None):
     gemini_history = []
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [msg["content"]]})
-    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
+    model = genai.GenerativeModel(CHAT_MODEL, system_instruction=SYSTEM_PROMPT)
     chat = model.start_chat(history=gemini_history)
     stream = chat.send_message(prompt, stream=True)
     for chunk in stream:
         if chunk.text:
             yield chunk.text
+
+
+def gemini_generate(prompt, history=None):
+    gemini_history = []
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            gemini_history.append({"role": role, "parts": [msg["content"]]})
+    model = genai.GenerativeModel(CHAT_MODEL, system_instruction=SYSTEM_PROMPT)
+    chat = model.start_chat(history=gemini_history)
+    response = chat.send_message(prompt)
+    return response.text
+
+
+def gemini_analyze_image(image_bytes, prompt):
+    image = Image.open(io.BytesIO(image_bytes))
+    model = genai.GenerativeModel(CHAT_MODEL)
+    response = model.generate_content([prompt, image])
+    return response.text
+
+
+def gemini_generate_image(prompt):
+    model = genai.GenerativeModel(IMAGE_GEN_MODEL)
+    response = model.generate_content(
+        prompt,
+        generation_config={"response_modalities": ["TEXT", "IMAGE"]},
+    )
+    for part in response.candidates[0].content.parts:
+        if hasattr(part, "inline_data") and part.inline_data:
+            return base64.b64decode(part.inline_data.data)
+    return None
 
 
 # ==========================================
@@ -83,8 +107,14 @@ if not API_KEY:
 # TABS
 # ==========================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "💬 AI Chat", "📚 Concept Explainer", "📝 Notes Summarizer", "🧠 Quiz Generator", "💻 Code Helper"
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "💬 AI Chat",
+    "🎨 Image Generator",
+    "📷 Image Analyzer",
+    "📚 Concept Explainer",
+    "📝 Notes Summarizer",
+    "🧠 Quiz Generator",
+    "💻 Code Helper",
 ])
 
 # ======================================
@@ -103,9 +133,8 @@ with tab1:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Get prompt from chat input OR from example button
     prompt = st.chat_input("Ask me anything...") or st.session_state.pending_prompt
-    st.session_state.pending_prompt = None  # clear after reading
+    st.session_state.pending_prompt = None
 
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -144,10 +173,84 @@ with tab1:
             st.rerun()
 
 # ======================================
-# TAB 2: CONCEPT EXPLAINER
+# TAB 2: IMAGE GENERATOR
 # ======================================
 
 with tab2:
+    st.markdown("Generate images from text descriptions using Gemini's image generation capability.")
+
+    img_prompt = st.text_area(
+        "Describe the image you want to generate",
+        placeholder="Example: A futuristic classroom with AI robots teaching students, digital art style",
+        height=100,
+    )
+
+    if st.button("Generate Image 🎨", type="primary"):
+        if img_prompt.strip():
+            with st.spinner("Generating image... this may take a moment ✨"):
+                try:
+                    img_bytes = gemini_generate_image(img_prompt)
+                    if img_bytes:
+                        st.image(img_bytes, caption=img_prompt, use_container_width=True)
+                        st.download_button(
+                            label="⬇️ Download Image",
+                            data=img_bytes,
+                            file_name="generated_image.png",
+                            mime="image/png",
+                        )
+                    else:
+                        st.warning("No image was returned. Try a different prompt.")
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please describe the image you want to generate.")
+
+    st.markdown("**💡 Example prompts:**")
+    img_examples = [
+        "A diagram showing how neural networks work, educational style",
+        "Binary search tree data structure visualization",
+        "The OSI model as a colorful infographic",
+        "A futuristic AI-powered study room",
+    ]
+    img_cols = st.columns(2)
+    for i, ex in enumerate(img_examples):
+        img_cols[i % 2].code(ex, language=None)
+
+# ======================================
+# TAB 3: IMAGE ANALYZER
+# ======================================
+
+with tab3:
+    st.markdown("Upload any image — diagrams, notes, screenshots, charts — and ask Gemini to analyze it.")
+
+    uploaded_file = st.file_uploader(
+        "Upload an image",
+        type=["png", "jpg", "jpeg", "webp", "gif"],
+        help="Supports PNG, JPG, JPEG, WebP, GIF"
+    )
+
+    if uploaded_file:
+        st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
+        analysis_prompt = st.text_input(
+            "What do you want to know about this image?",
+            value="Describe this image in detail and explain what it shows.",
+            placeholder="E.g. Explain this diagram, What does this code do?, Summarize these notes...",
+        )
+        if st.button("Analyze Image 🔍", type="primary"):
+            with st.spinner("Analyzing..."):
+                try:
+                    result = gemini_analyze_image(uploaded_file.read(), analysis_prompt)
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+    else:
+        st.info("👆 Upload an image to get started. You can upload diagrams, handwritten notes, flowcharts, code screenshots, etc.")
+
+# ======================================
+# TAB 4: CONCEPT EXPLAINER
+# ======================================
+
+with tab4:
     st.markdown("Enter any topic and get a clear, structured explanation perfect for engineering students.")
     topic = st.text_input("Enter Topic", placeholder="Example: Machine Learning, Recursion, Dijkstra's Algorithm...")
     if st.button("Explain Topic ✨", type="primary"):
@@ -172,10 +275,10 @@ Use markdown formatting with bold headings and bullet points.""")
             st.warning("Please enter a topic.")
 
 # ======================================
-# TAB 3: NOTES SUMMARIZER
+# TAB 5: NOTES SUMMARIZER
 # ======================================
 
-with tab3:
+with tab5:
     st.markdown("Paste your lengthy study notes and get a concise, bullet-point summary instantly.")
     notes = st.text_area("Paste Your Notes", placeholder="Paste your study notes here...", height=250)
     if st.button("Summarize Notes 📋", type="primary"):
@@ -201,10 +304,10 @@ Notes:
             st.warning("Please paste your notes.")
 
 # ======================================
-# TAB 4: QUIZ GENERATOR
+# TAB 6: QUIZ GENERATOR
 # ======================================
 
-with tab4:
+with tab6:
     st.markdown("Generate 5 MCQ questions on any topic to test your knowledge!")
     quiz_topic = st.text_input("Enter Topic", placeholder="Example: Artificial Intelligence, Data Structures, DBMS...", key="quiz_topic")
     if st.button("Generate Quiz 🎯", type="primary"):
@@ -237,10 +340,10 @@ Use markdown formatting.""")
             st.warning("Please enter a topic.")
 
 # ======================================
-# TAB 5: CODE HELPER
+# TAB 7: CODE HELPER
 # ======================================
 
-with tab5:
+with tab7:
     st.markdown("Describe any coding problem and get a complete solution with explanation.")
     col1, col2 = st.columns([1, 3])
     with col1:
