@@ -7,11 +7,10 @@ import os
 # ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY_MISSING = not API_KEY
 
-if not API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set.")
-
-genai.configure(api_key=API_KEY)
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 MODEL = "gemini-1.5-flash"
 
@@ -44,6 +43,9 @@ def chat_stream(user_message, history):
     Streaming chat with full conversation memory.
     history is a list of {"role": "user"/"assistant", "content": "..."} dicts.
     """
+    if API_KEY_MISSING:
+        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."}], ""
+        return
     if not user_message.strip():
         yield history, ""
         return
@@ -93,6 +95,8 @@ def clear_chat():
 # ==========================================
 
 def explain_topic(topic):
+    if API_KEY_MISSING:
+        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
     if not topic.strip():
         return "Please enter a topic."
 
@@ -122,6 +126,8 @@ Use markdown formatting with bold headings and bullet points.
 # ==========================================
 
 def summarize_notes(notes):
+    if API_KEY_MISSING:
+        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
     if not notes.strip():
         return "Please paste your notes."
 
@@ -152,6 +158,8 @@ Notes:
 # ==========================================
 
 def generate_quiz(topic):
+    if API_KEY_MISSING:
+        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
     if not topic.strip():
         return "Please enter a topic."
 
@@ -189,6 +197,8 @@ Use markdown formatting.
 # ==========================================
 
 def help_with_code(language, problem):
+    if API_KEY_MISSING:
+        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
     if not problem.strip():
         return "Please describe your coding problem."
 
