@@ -3,8 +3,8 @@ title: AI Study Buddy
 emoji: 🎓
 colorFrom: blue
 colorTo: indigo
-sdk: gradio
-sdk_version: "4.42.0"
+sdk: streamlit
+sdk_version: "1.32.0"
 python_version: "3.10"
 app_file: app.py
 pinned: false

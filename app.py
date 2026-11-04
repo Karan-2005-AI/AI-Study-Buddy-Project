@@ -1,22 +1,26 @@
-import gradio as gr
+import streamlit as st
 import os
 import requests
 import json
+
+# ==========================================
+# PAGE CONFIG
+# ==========================================
+
+st.set_page_config(
+    page_title="AI Study Buddy",
+    page_icon="🎓",
+    layout="centered",
+)
 
 # ==========================================
 # GEMINI API SETUP
 # ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-API_KEY_MISSING = not API_KEY
-
 MODEL = "gemini-2.0-flash"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 GEMINI_STREAM_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent"
-
-# ==========================================
-# SYSTEM PROMPT — Study Buddy Personality
-# ==========================================
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -35,19 +39,16 @@ Always be helpful, conversational, and supportive — just like a real study bud
 
 
 def gemini_generate(prompt, history=None):
-    """Call Gemini REST API and return the text response."""
     contents = []
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             contents.append({"role": role, "parts": [{"text": msg["content"]}]})
     contents.append({"role": "user", "parts": [{"text": prompt}]})
-
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
     }
-
     response = requests.post(
         GEMINI_URL,
         headers={"Content-Type": "application/json"},
@@ -61,19 +62,16 @@ def gemini_generate(prompt, history=None):
 
 
 def gemini_stream(prompt, history=None):
-    """Call Gemini streaming REST API and yield text chunks."""
     contents = []
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
             contents.append({"role": role, "parts": [{"text": msg["content"]}]})
     contents.append({"role": "user", "parts": [{"text": prompt}]})
-
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
     }
-
     with requests.post(
         GEMINI_STREAM_URL,
         headers={"Content-Type": "application/json"},
@@ -100,46 +98,90 @@ def gemini_stream(prompt, history=None):
 
 
 # ==========================================
-# FEATURE 1: AI CHAT (with memory + streaming)
+# HEADER
 # ==========================================
 
-def chat_stream(user_message, history):
-    if API_KEY_MISSING:
-        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."}], ""
-        return
-    if not user_message.strip():
-        yield history, ""
-        return
+st.markdown("""
+<div style="text-align:center; padding: 10px 0 20px 0;">
+    <h1>🎓 AI Study Buddy</h1>
+    <p style="color: #666;">Your intelligent AI-powered study assistant — powered by Google Gemini</p>
+</div>
+""", unsafe_allow_html=True)
 
-    history = history + [{"role": "user", "content": user_message}]
-    full_response = ""
-
-    try:
-        for chunk in gemini_stream(user_message, history[:-1]):
-            full_response += chunk
-            yield history + [{"role": "assistant", "content": full_response}], ""
-    except Exception as e:
-        yield history + [{"role": "assistant", "content": f"⚠️ Error: {str(e)}"}], ""
-        return
-
-    yield history + [{"role": "assistant", "content": full_response}], ""
-
-
-def clear_chat():
-    return [], ""
-
+if not API_KEY:
+    st.error("⚠️ **GEMINI_API_KEY** is not set. Go to Space Settings → Variables and secrets → New secret.")
+    st.stop()
 
 # ==========================================
-# FEATURE 2: CONCEPT EXPLAINER
+# TABS
 # ==========================================
 
-def explain_topic(topic):
-    if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
-    if not topic.strip():
-        return "Please enter a topic."
-    try:
-        return gemini_generate(f"""Explain this topic in simple and easy English for engineering students.
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "💬 AI Chat", "📚 Concept Explainer", "📝 Notes Summarizer", "🧠 Quiz Generator", "💻 Code Helper"
+])
+
+# ======================================
+# TAB 1: AI CHAT
+# ======================================
+
+with tab1:
+    st.markdown("**Chat with your Study Buddy!** Ask anything — study topics, coding help, or just have a conversation.")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Ask me anything..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            full_response = ""
+            try:
+                for chunk in gemini_stream(prompt, st.session_state.messages[:-1]):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                response_placeholder.markdown(full_response)
+            except Exception as e:
+                full_response = f"⚠️ Error: {str(e)}"
+                response_placeholder.markdown(full_response)
+
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("**💡 Try these examples:**")
+    examples = [
+        "Explain machine learning in simple words",
+        "What is the difference between AI, ML, and Deep Learning?",
+        "Write a Python program to implement binary search",
+        "Explain the OSI model with layers",
+    ]
+    cols = st.columns(2)
+    for i, ex in enumerate(examples):
+        if cols[i % 2].button(ex, key=f"ex_{i}"):
+            st.session_state.messages.append({"role": "user", "content": ex})
+            st.rerun()
+
+# ======================================
+# TAB 2: CONCEPT EXPLAINER
+# ======================================
+
+with tab2:
+    st.markdown("Enter any topic and get a clear, structured explanation perfect for engineering students.")
+    topic = st.text_input("Enter Topic", placeholder="Example: Machine Learning, Recursion, Dijkstra's Algorithm...")
+    if st.button("Explain Topic ✨", type="primary"):
+        if topic.strip():
+            with st.spinner("Explaining..."):
+                try:
+                    result = gemini_generate(f"""Explain this topic in simple and easy English for engineering students.
 
 Topic: {topic}
 
@@ -150,21 +192,24 @@ Give:
 - Short conclusion
 
 Use markdown formatting with bold headings and bullet points.""")
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please enter a topic.")
 
+# ======================================
+# TAB 3: NOTES SUMMARIZER
+# ======================================
 
-# ==========================================
-# FEATURE 3: NOTES SUMMARIZER
-# ==========================================
-
-def summarize_notes(notes):
-    if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
-    if not notes.strip():
-        return "Please paste your notes."
-    try:
-        return gemini_generate(f"""Summarize these study notes for an engineering student.
+with tab3:
+    st.markdown("Paste your lengthy study notes and get a concise, bullet-point summary instantly.")
+    notes = st.text_area("Paste Your Notes", placeholder="Paste your study notes here...", height=250)
+    if st.button("Summarize Notes 📋", type="primary"):
+        if notes.strip():
+            with st.spinner("Summarizing..."):
+                try:
+                    result = gemini_generate(f"""Summarize these study notes for an engineering student.
 
 Use:
 - Short bullet points
@@ -176,21 +221,24 @@ Do not add information that is not in the notes.
 
 Notes:
 {notes}""")
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please paste your notes.")
 
+# ======================================
+# TAB 4: QUIZ GENERATOR
+# ======================================
 
-# ==========================================
-# FEATURE 4: QUIZ GENERATOR
-# ==========================================
-
-def generate_quiz(topic):
-    if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
-    if not topic.strip():
-        return "Please enter a topic."
-    try:
-        return gemini_generate(f"""Create 5 multiple-choice questions about: {topic}
+with tab4:
+    st.markdown("Generate 5 MCQ questions on any topic to test your knowledge!")
+    quiz_topic = st.text_input("Enter Topic", placeholder="Example: Artificial Intelligence, Data Structures, DBMS...", key="quiz_topic")
+    if st.button("Generate Quiz 🎯", type="primary"):
+        if quiz_topic.strip():
+            with st.spinner("Generating quiz..."):
+                try:
+                    result = gemini_generate(f"""Create 5 multiple-choice questions about: {quiz_topic}
 
 For each question provide:
 **Q1.** Question text
@@ -209,24 +257,30 @@ After all 5 questions, provide:
 
 Keep the questions suitable for engineering students.
 Use markdown formatting.""")
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please enter a topic.")
 
+# ======================================
+# TAB 5: CODE HELPER
+# ======================================
 
-# ==========================================
-# FEATURE 5: CODE HELPER
-# ==========================================
+with tab5:
+    st.markdown("Describe any coding problem and get a complete solution with explanation.")
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        language = st.selectbox("Language", ["Python", "C", "C++", "Java", "JavaScript", "SQL", "Other"])
+    with col2:
+        problem = st.text_area("Describe your problem", placeholder="Example: Write a program to find the factorial of a number using recursion", height=100)
+    if st.button("Solve It 🔧", type="primary"):
+        if problem.strip():
+            with st.spinner("Solving..."):
+                try:
+                    result = gemini_generate(f"""You are an expert programming tutor helping an engineering student.
 
-def help_with_code(language, problem):
-    if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
-    if not problem.strip():
-        return "Please describe your coding problem."
-    lang = language if language else "any language"
-    try:
-        return gemini_generate(f"""You are an expert programming tutor helping an engineering student.
-
-Language: {lang}
+Language: {language}
 Problem: {problem}
 
 Provide:
@@ -236,130 +290,20 @@ Provide:
 4. Time/space complexity if relevant
 
 Use proper markdown code blocks.""")
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
-
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please describe your problem.")
 
 # ==========================================
-# GRADIO INTERFACE
+# FOOTER
 # ==========================================
 
-with gr.Blocks(
-    title="AI Study Buddy",
-    theme=gr.themes.Soft(
-        primary_hue="blue",
-        secondary_hue="indigo",
-    ),
-    css="""
-    .chat-header { text-align: center; padding: 10px 0; }
-    .footer-text { text-align: center; color: #888; font-size: 12px; margin-top: 10px; }
-    """
-) as demo:
-
-    gr.Markdown(
-        """
-        <div class="chat-header">
-
-        # 🎓 AI Study Buddy
-        ### Your intelligent AI-powered study assistant — powered by Google Gemini
-        *Ask me anything! I can explain concepts, summarize notes, generate quizzes, help with code, and have full conversations.*
-
-        </div>
-        """,
-    )
-
-    with gr.Tab("💬 AI Chat"):
-        gr.Markdown("**Chat with your Study Buddy!** Ask anything — study topics, general questions, coding help, or just have a conversation.")
-
-        chatbot = gr.Chatbot(
-            label="AI Study Buddy Chat",
-            height=500,
-            type="messages",
-            show_copy_button=True,
-            bubble_full_width=False,
-        )
-
-        with gr.Row():
-            chat_input = gr.Textbox(
-                label="",
-                placeholder="Ask me anything... (e.g. 'Explain neural networks', 'Write a Python sorting algorithm', 'What is quantum computing?')",
-                scale=9,
-                lines=1,
-                autofocus=True,
-            )
-            send_btn = gr.Button("Send ➤", variant="primary", scale=1)
-
-        with gr.Row():
-            clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
-
-        gr.Examples(
-            examples=[
-                "Explain machine learning in simple words",
-                "What is the difference between AI, ML, and Deep Learning?",
-                "Write a Python program to implement binary search",
-                "Explain the OSI model with layers",
-                "What is DBMS and explain normalization?",
-                "Tell me a fun fact about computer science",
-            ],
-            inputs=chat_input,
-            label="💡 Try these examples:",
-        )
-
-        send_btn.click(fn=chat_stream, inputs=[chat_input, chatbot], outputs=[chatbot, chat_input])
-        chat_input.submit(fn=chat_stream, inputs=[chat_input, chatbot], outputs=[chatbot, chat_input])
-        clear_btn.click(fn=clear_chat, outputs=[chatbot, chat_input])
-
-    with gr.Tab("📚 Concept Explainer"):
-        gr.Markdown("Enter any topic and get a clear, structured explanation perfect for engineering students.")
-        topic = gr.Textbox(label="Enter Topic", placeholder="Example: Machine Learning, Recursion, Dijkstra's Algorithm...")
-        explain_btn = gr.Button("Explain Topic ✨", variant="primary")
-        explanation = gr.Markdown(label="Explanation")
-        explain_btn.click(fn=explain_topic, inputs=topic, outputs=explanation)
-        topic.submit(fn=explain_topic, inputs=topic, outputs=explanation)
-
-    with gr.Tab("📝 Notes Summarizer"):
-        gr.Markdown("Paste your lengthy study notes and get a concise, bullet-point summary instantly.")
-        notes = gr.Textbox(label="Paste Your Notes", placeholder="Paste your study notes here...", lines=12)
-        summarize_btn = gr.Button("Summarize Notes 📋", variant="primary")
-        summary = gr.Markdown(label="Summary")
-        summarize_btn.click(fn=summarize_notes, inputs=notes, outputs=summary)
-
-    with gr.Tab("🧠 Quiz Generator"):
-        gr.Markdown("Generate 5 MCQ questions on any topic to test your knowledge!")
-        quiz_topic = gr.Textbox(label="Enter Topic", placeholder="Example: Artificial Intelligence, Data Structures, DBMS...")
-        quiz_btn = gr.Button("Generate Quiz 🎯", variant="primary")
-        quiz = gr.Markdown(label="Quiz")
-        quiz_btn.click(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
-        quiz_topic.submit(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
-
-    with gr.Tab("💻 Code Helper"):
-        gr.Markdown("Describe any coding problem and get a complete solution with explanation.")
-        with gr.Row():
-            code_language = gr.Dropdown(
-                choices=["Python", "C", "C++", "Java", "JavaScript", "SQL", "Other"],
-                label="Programming Language",
-                value="Python",
-                scale=2,
-            )
-            code_problem = gr.Textbox(
-                label="Describe your problem",
-                placeholder="Example: Write a program to find the factorial of a number using recursion",
-                scale=8,
-                lines=3,
-            )
-        code_btn = gr.Button("Solve It 🔧", variant="primary")
-        code_output = gr.Markdown(label="Solution")
-        code_btn.click(fn=help_with_code, inputs=[code_language, code_problem], outputs=code_output)
-
-    gr.Markdown(
-        """
-        <div class="footer-text">
-
-        ---
-        Built with ❤️ by **Karan Dewangan** | B.Tech CS (AIML) | Chouksey Engineering College, Bilaspur | Minor Project Phase 1
-
-        </div>
-        """,
-    )
-
-demo.launch()
+st.markdown("---")
+st.markdown(
+    "<div style='text-align:center; color:#888; font-size:12px;'>"
+    "Built with ❤️ by <b>Karan Dewangan</b> | B.Tech CS (AIML) | Chouksey Engineering College, Bilaspur | Minor Project Phase 1"
+    "</div>",
+    unsafe_allow_html=True,
+)
