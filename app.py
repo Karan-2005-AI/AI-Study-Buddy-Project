@@ -1,5 +1,6 @@
 import gradio as gr
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 
 # ==========================================
@@ -9,13 +10,10 @@ import os
 API_KEY = os.getenv("GEMINI_API_KEY")
 API_KEY_MISSING = not API_KEY
 
-print(f"[DEBUG] GEMINI_API_KEY present: {bool(API_KEY)}")
-print(f"[DEBUG] API_KEY first 8 chars: {API_KEY[:8] if API_KEY else 'NOT SET'}")
-
 if API_KEY:
-    genai.configure(api_key=API_KEY)
+    client = genai.Client(api_key=API_KEY)
 
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-2.0-flash"
 
 # ==========================================
 # SYSTEM PROMPT — Study Buddy Personality
@@ -42,12 +40,8 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # ==========================================
 
 def chat_stream(user_message, history):
-    """
-    Streaming chat with full conversation memory.
-    history is a list of {"role": "user"/"assistant", "content": "..."} dicts.
-    """
     if API_KEY_MISSING:
-        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."}], ""
+        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in Space Settings → Variables and secrets."}], ""
         return
     if not user_message.strip():
         yield history, ""
@@ -57,36 +51,34 @@ def chat_stream(user_message, history):
     gemini_history = []
     for msg in history:
         role = "user" if msg["role"] == "user" else "model"
-        gemini_history.append({"role": role, "parts": [msg["content"]]})
+        gemini_history.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
 
-    # Add user message to display history immediately
+    # Add user message to display history
     history = history + [{"role": "user", "content": user_message}]
 
-    # Stream the response
     full_response = ""
     try:
-        model = genai.GenerativeModel(
-            model_name=MODEL,
-            system_instruction=SYSTEM_PROMPT,
-        )
-        chat = model.start_chat(history=gemini_history)
-        stream = chat.send_message(user_message, stream=True)
+        gemini_history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
 
-        for chunk in stream:
+        response = client.models.generate_content_stream(
+            model=MODEL,
+            contents=gemini_history,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+            ),
+        )
+
+        for chunk in response:
             if chunk.text:
                 full_response += chunk.text
-                current_history = history + [{"role": "assistant", "content": full_response}]
-                yield current_history, ""
+                yield history + [{"role": "assistant", "content": full_response}], ""
 
     except Exception as e:
         error_msg = f"⚠️ Error: {str(e)}"
-        history = history + [{"role": "assistant", "content": error_msg}]
-        yield history, ""
+        yield history + [{"role": "assistant", "content": error_msg}], ""
         return
 
-    # Final yield with complete response
-    final_history = history + [{"role": "assistant", "content": full_response}]
-    yield final_history, ""
+    yield history + [{"role": "assistant", "content": full_response}], ""
 
 
 def clear_chat():
@@ -99,14 +91,13 @@ def clear_chat():
 
 def explain_topic(topic):
     if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
+        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
     if not topic.strip():
         return "Please enter a topic."
-
     try:
-        model = genai.GenerativeModel(MODEL)
-        response = model.generate_content(f"""
-Explain this topic in simple and easy English for engineering students.
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=f"""Explain this topic in simple and easy English for engineering students.
 
 Topic: {topic}
 
@@ -116,10 +107,9 @@ Give:
 - One real-world application
 - Short conclusion
 
-Use markdown formatting with bold headings and bullet points.
-""")
+Use markdown formatting with bold headings and bullet points."""
+        )
         return response.text
-
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -130,14 +120,13 @@ Use markdown formatting with bold headings and bullet points.
 
 def summarize_notes(notes):
     if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
+        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
     if not notes.strip():
         return "Please paste your notes."
-
     try:
-        model = genai.GenerativeModel(MODEL)
-        response = model.generate_content(f"""
-Summarize these study notes for an engineering student.
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=f"""Summarize these study notes for an engineering student.
 
 Use:
 - Short bullet points
@@ -148,10 +137,9 @@ Use:
 Do not add information that is not in the notes.
 
 Notes:
-{notes}
-""")
+{notes}"""
+        )
         return response.text
-
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -162,14 +150,13 @@ Notes:
 
 def generate_quiz(topic):
     if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
+        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
     if not topic.strip():
         return "Please enter a topic."
-
     try:
-        model = genai.GenerativeModel(MODEL)
-        response = model.generate_content(f"""
-Create 5 multiple-choice questions about: {topic}
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=f"""Create 5 multiple-choice questions about: {topic}
 
 For each question provide:
 **Q1.** Question text
@@ -187,10 +174,9 @@ After all 5 questions, provide:
 ...
 
 Keep the questions suitable for engineering students.
-Use markdown formatting.
-""")
+Use markdown formatting."""
+        )
         return response.text
-
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -201,16 +187,14 @@ Use markdown formatting.
 
 def help_with_code(language, problem):
     if API_KEY_MISSING:
-        return "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in the Space Settings → Variables and secrets."
+        return "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."
     if not problem.strip():
         return "Please describe your coding problem."
-
     lang = language if language else "any language"
-
     try:
-        model = genai.GenerativeModel(MODEL)
-        response = model.generate_content(f"""
-You are an expert programming tutor helping an engineering student.
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=f"""You are an expert programming tutor helping an engineering student.
 
 Language: {lang}
 Problem: {problem}
@@ -221,10 +205,9 @@ Provide:
 3. Explanation of the key lines
 4. Time/space complexity if relevant
 
-Use proper markdown code blocks.
-""")
+Use proper markdown code blocks."""
+        )
         return response.text
-
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -257,12 +240,7 @@ with gr.Blocks(
         """,
     )
 
-    # ======================================
-    # TAB 1: AI CHAT (Main feature)
-    # ======================================
-
     with gr.Tab("💬 AI Chat"):
-
         gr.Markdown("**Chat with your Study Buddy!** Ask anything — study topics, general questions, coding help, or just have a conversation.")
 
         chatbot = gr.Chatbot(
@@ -299,86 +277,35 @@ with gr.Blocks(
             label="💡 Try these examples:",
         )
 
-        send_btn.click(
-            fn=chat_stream,
-            inputs=[chat_input, chatbot],
-            outputs=[chatbot, chat_input],
-        )
-        chat_input.submit(
-            fn=chat_stream,
-            inputs=[chat_input, chatbot],
-            outputs=[chatbot, chat_input],
-        )
-        clear_btn.click(
-            fn=clear_chat,
-            outputs=[chatbot, chat_input],
-        )
-
-    # ======================================
-    # TAB 2: CONCEPT EXPLAINER
-    # ======================================
+        send_btn.click(fn=chat_stream, inputs=[chat_input, chatbot], outputs=[chatbot, chat_input])
+        chat_input.submit(fn=chat_stream, inputs=[chat_input, chatbot], outputs=[chatbot, chat_input])
+        clear_btn.click(fn=clear_chat, outputs=[chatbot, chat_input])
 
     with gr.Tab("📚 Concept Explainer"):
-
         gr.Markdown("Enter any topic and get a clear, structured explanation perfect for engineering students.")
-
-        topic = gr.Textbox(
-            label="Enter Topic",
-            placeholder="Example: Machine Learning, Recursion, Dijkstra's Algorithm..."
-        )
-
+        topic = gr.Textbox(label="Enter Topic", placeholder="Example: Machine Learning, Recursion, Dijkstra's Algorithm...")
         explain_btn = gr.Button("Explain Topic ✨", variant="primary")
         explanation = gr.Markdown(label="Explanation")
-
         explain_btn.click(fn=explain_topic, inputs=topic, outputs=explanation)
         topic.submit(fn=explain_topic, inputs=topic, outputs=explanation)
 
-    # ======================================
-    # TAB 3: NOTES SUMMARIZER
-    # ======================================
-
     with gr.Tab("📝 Notes Summarizer"):
-
         gr.Markdown("Paste your lengthy study notes and get a concise, bullet-point summary instantly.")
-
-        notes = gr.Textbox(
-            label="Paste Your Notes",
-            placeholder="Paste your study notes here...",
-            lines=12
-        )
-
+        notes = gr.Textbox(label="Paste Your Notes", placeholder="Paste your study notes here...", lines=12)
         summarize_btn = gr.Button("Summarize Notes 📋", variant="primary")
         summary = gr.Markdown(label="Summary")
-
         summarize_btn.click(fn=summarize_notes, inputs=notes, outputs=summary)
 
-    # ======================================
-    # TAB 4: QUIZ GENERATOR
-    # ======================================
-
     with gr.Tab("🧠 Quiz Generator"):
-
         gr.Markdown("Generate 5 MCQ questions on any topic to test your knowledge!")
-
-        quiz_topic = gr.Textbox(
-            label="Enter Topic",
-            placeholder="Example: Artificial Intelligence, Data Structures, DBMS..."
-        )
-
+        quiz_topic = gr.Textbox(label="Enter Topic", placeholder="Example: Artificial Intelligence, Data Structures, DBMS...")
         quiz_btn = gr.Button("Generate Quiz 🎯", variant="primary")
         quiz = gr.Markdown(label="Quiz")
-
         quiz_btn.click(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
         quiz_topic.submit(fn=generate_quiz, inputs=quiz_topic, outputs=quiz)
 
-    # ======================================
-    # TAB 5: CODE HELPER
-    # ======================================
-
     with gr.Tab("💻 Code Helper"):
-
         gr.Markdown("Describe any coding problem and get a complete solution with explanation.")
-
         with gr.Row():
             code_language = gr.Dropdown(
                 choices=["Python", "C", "C++", "Java", "JavaScript", "SQL", "Other"],
@@ -392,13 +319,10 @@ with gr.Blocks(
                 scale=8,
                 lines=3,
             )
-
         code_btn = gr.Button("Solve It 🔧", variant="primary")
         code_output = gr.Markdown(label="Solution")
-
         code_btn.click(fn=help_with_code, inputs=[code_language, code_problem], outputs=code_output)
 
-    # Footer
     gr.Markdown(
         """
         <div class="footer-text">
@@ -409,9 +333,5 @@ with gr.Blocks(
         </div>
         """,
     )
-
-# ==========================================
-# LAUNCH
-# ==========================================
 
 demo.launch()
