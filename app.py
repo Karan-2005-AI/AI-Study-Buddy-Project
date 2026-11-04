@@ -1,7 +1,7 @@
 import gradio as gr
-from google import genai
-from google.genai import types
 import os
+import requests
+import json
 
 # ==========================================
 # GEMINI API SETUP
@@ -10,10 +10,9 @@ import os
 API_KEY = os.getenv("GEMINI_API_KEY")
 API_KEY_MISSING = not API_KEY
 
-if API_KEY:
-    client = genai.Client(api_key=API_KEY)
-
 MODEL = "gemini-2.0-flash"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+GEMINI_STREAM_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent"
 
 # ==========================================
 # SYSTEM PROMPT — Study Buddy Personality
@@ -35,47 +34,92 @@ You were built by Karan Dewangan, a B.Tech CS (AIML) student at Chouksey Enginee
 Always be helpful, conversational, and supportive — just like a real study buddy!"""
 
 
+def gemini_generate(prompt, history=None):
+    """Call Gemini REST API and return the text response."""
+    contents = []
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": contents,
+    }
+
+    response = requests.post(
+        GEMINI_URL,
+        headers={"Content-Type": "application/json"},
+        params={"key": API_KEY},
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def gemini_stream(prompt, history=None):
+    """Call Gemini streaming REST API and yield text chunks."""
+    contents = []
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": contents,
+    }
+
+    with requests.post(
+        GEMINI_STREAM_URL,
+        headers={"Content-Type": "application/json"},
+        params={"key": API_KEY, "alt": "sse"},
+        json=payload,
+        stream=True,
+        timeout=60,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if line:
+                line = line.decode("utf-8")
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        text = data["candidates"][0]["content"]["parts"][0].get("text", "")
+                        if text:
+                            yield text
+                    except (KeyError, json.JSONDecodeError):
+                        continue
+
+
 # ==========================================
 # FEATURE 1: AI CHAT (with memory + streaming)
 # ==========================================
 
 def chat_stream(user_message, history):
     if API_KEY_MISSING:
-        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** The space owner needs to add `GEMINI_API_KEY` in Space Settings → Variables and secrets."}], ""
+        yield history + [{"role": "assistant", "content": "⚠️ **API key not configured.** Add `GEMINI_API_KEY` in Space Settings → Variables and secrets."}], ""
         return
     if not user_message.strip():
         yield history, ""
         return
 
-    # Build conversation history for Gemini
-    gemini_history = []
-    for msg in history:
-        role = "user" if msg["role"] == "user" else "model"
-        gemini_history.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-
-    # Add user message to display history
     history = history + [{"role": "user", "content": user_message}]
-
     full_response = ""
+
     try:
-        gemini_history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
-
-        response = client.models.generate_content_stream(
-            model=MODEL,
-            contents=gemini_history,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-            ),
-        )
-
-        for chunk in response:
-            if chunk.text:
-                full_response += chunk.text
-                yield history + [{"role": "assistant", "content": full_response}], ""
-
+        for chunk in gemini_stream(user_message, history[:-1]):
+            full_response += chunk
+            yield history + [{"role": "assistant", "content": full_response}], ""
     except Exception as e:
-        error_msg = f"⚠️ Error: {str(e)}"
-        yield history + [{"role": "assistant", "content": error_msg}], ""
+        yield history + [{"role": "assistant", "content": f"⚠️ Error: {str(e)}"}], ""
         return
 
     yield history + [{"role": "assistant", "content": full_response}], ""
@@ -95,9 +139,7 @@ def explain_topic(topic):
     if not topic.strip():
         return "Please enter a topic."
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""Explain this topic in simple and easy English for engineering students.
+        return gemini_generate(f"""Explain this topic in simple and easy English for engineering students.
 
 Topic: {topic}
 
@@ -107,9 +149,7 @@ Give:
 - One real-world application
 - Short conclusion
 
-Use markdown formatting with bold headings and bullet points."""
-        )
-        return response.text
+Use markdown formatting with bold headings and bullet points.""")
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -124,9 +164,7 @@ def summarize_notes(notes):
     if not notes.strip():
         return "Please paste your notes."
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""Summarize these study notes for an engineering student.
+        return gemini_generate(f"""Summarize these study notes for an engineering student.
 
 Use:
 - Short bullet points
@@ -137,9 +175,7 @@ Use:
 Do not add information that is not in the notes.
 
 Notes:
-{notes}"""
-        )
-        return response.text
+{notes}""")
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -154,9 +190,7 @@ def generate_quiz(topic):
     if not topic.strip():
         return "Please enter a topic."
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""Create 5 multiple-choice questions about: {topic}
+        return gemini_generate(f"""Create 5 multiple-choice questions about: {topic}
 
 For each question provide:
 **Q1.** Question text
@@ -174,9 +208,7 @@ After all 5 questions, provide:
 ...
 
 Keep the questions suitable for engineering students.
-Use markdown formatting."""
-        )
-        return response.text
+Use markdown formatting.""")
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -192,9 +224,7 @@ def help_with_code(language, problem):
         return "Please describe your coding problem."
     lang = language if language else "any language"
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"""You are an expert programming tutor helping an engineering student.
+        return gemini_generate(f"""You are an expert programming tutor helping an engineering student.
 
 Language: {lang}
 Problem: {problem}
@@ -205,9 +235,7 @@ Provide:
 3. Explanation of the key lines
 4. Time/space complexity if relevant
 
-Use proper markdown code blocks."""
-        )
-        return response.text
+Use proper markdown code blocks.""")
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
