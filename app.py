@@ -9,6 +9,9 @@ import os
 API_KEY = os.getenv("GEMINI_API_KEY")
 API_KEY_MISSING = not API_KEY
 
+print(f"[DEBUG] GEMINI_API_KEY present: {bool(API_KEY)}")
+print(f"[DEBUG] API_KEY first 8 chars: {API_KEY[:8] if API_KEY else 'NOT SET'}")
+
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
