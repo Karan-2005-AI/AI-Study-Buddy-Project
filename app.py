@@ -21,9 +21,9 @@ st.set_page_config(
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
-CHAT_MODEL      = "gemini-2.5-flash-lite"
+CHAT_MODEL      = "gemini-3.5-flash-lite"
 IMAGE_GEN_MODEL = "gemini-2.5-flash-image"
-IMAGE_VIS_MODEL = "gemini-2.5-flash-lite"
+IMAGE_VIS_MODEL = "gemini-3.5-flash-lite"
 
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
