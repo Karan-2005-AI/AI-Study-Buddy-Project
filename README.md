@@ -17,16 +17,22 @@ An AI-powered educational assistant built using Google's Gemini AI.
 ## Features
 
 * 💬 AI Chat (with memory & streaming)
+* 🎨 Image Generator
+* 📷 Image Analyzer
 * 📚 Concept Explainer
 * 📝 Notes Summarizer
 * 🧠 Quiz Generator
 * 💻 Code Helper
+* 🃏 Flashcard Generator (from topic or notes, expandable cards + download)
+* 📄 PDF Q&A (upload PDF, ask questions about its content)
+* 📅 Study Planner (personalized day-by-day schedule with hourly breakdown)
 
 ## Technology Stack
 
 * Python
-* Gemini AI (gemini-2.5-flash)
-* Gradio
+* Streamlit
+* Google Gemini AI (gemini-2.5-flash)
+* PyMuPDF (PDF text extraction)
 * Hugging Face Spaces
 
 ## Developed By

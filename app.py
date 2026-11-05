@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import base64
 import io
+import fitz  # PyMuPDF
 from PIL import Image
 import google.generativeai as genai
 
@@ -110,7 +111,7 @@ if not GEMINI_KEY:
 # TABS
 # ==========================================
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "💬 AI Chat",
     "🎨 Image Generator",
     "📷 Image Analyzer",
@@ -118,6 +119,9 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📝 Notes Summarizer",
     "🧠 Quiz Generator",
     "💻 Code Helper",
+    "🃏 Flashcard Generator",
+    "📄 PDF Q&A",
+    "📅 Study Planner",
 ])
 
 # ======================================
@@ -376,6 +380,261 @@ Use proper markdown code blocks.""")
                     st.error(f"⚠️ Error: {str(e)}")
         else:
             st.warning("Please describe your problem.")
+
+# ======================================
+# TAB 8: FLASHCARD GENERATOR
+# ======================================
+
+with tab8:
+    st.markdown("Generate **Q&A flashcards** from any topic or your own notes to boost revision!")
+
+    fc_mode = st.radio("Generate flashcards from:", ["A Topic", "My Notes"], horizontal=True)
+
+    if fc_mode == "A Topic":
+        fc_input = st.text_input("Enter Topic", placeholder="Example: Operating Systems, Linked Lists, Thermodynamics...")
+    else:
+        fc_input = st.text_area("Paste Your Notes", placeholder="Paste your study notes here...", height=200)
+
+    fc_count = st.slider("Number of flashcards", min_value=5, max_value=20, value=10, step=5)
+
+    if st.button("Generate Flashcards 🃏", type="primary"):
+        if fc_input.strip():
+            with st.spinner("Creating flashcards..."):
+                try:
+                    source_label = f"topic: {fc_input}" if fc_mode == "A Topic" else f"the following notes:\n{fc_input}"
+                    prompt = f"""Create exactly {fc_count} flashcards based on {source_label}.
+
+Format each flashcard EXACTLY like this (no deviations):
+
+**Card 1**
+**Q:** Question here
+**A:** Answer here
+
+**Card 2**
+**Q:** Question here
+**A:** Answer here
+
+...and so on up to Card {fc_count}.
+
+Keep questions concise and answers clear (2–4 sentences max).
+Make the questions test real understanding, not just definitions."""
+
+                    result = gemini_generate(prompt)
+
+                    # Parse and display as expandable cards
+                    st.markdown("---")
+                    st.markdown(f"### 🃏 Your {fc_count} Flashcards")
+
+                    # Try to split into individual cards
+                    import re
+                    cards = re.split(r"\*\*Card\s+\d+\*\*", result)
+                    cards = [c.strip() for c in cards if c.strip()]
+
+                    if len(cards) >= 2:
+                        for idx, card in enumerate(cards, 1):
+                            # Extract Q and A
+                            q_match = re.search(r"\*\*Q:\*\*\s*(.*?)(?=\*\*A:\*\*)", card, re.DOTALL)
+                            a_match = re.search(r"\*\*A:\*\*\s*(.*)", card, re.DOTALL)
+                            q_text = q_match.group(1).strip() if q_match else card
+                            a_text = a_match.group(1).strip() if a_match else ""
+                            with st.expander(f"Card {idx}: {q_text[:80]}{'...' if len(q_text) > 80 else ''}"):
+                                st.markdown(f"**❓ Question:** {q_text}")
+                                st.markdown(f"**✅ Answer:** {a_text}")
+                    else:
+                        # Fallback: show raw markdown
+                        st.markdown(result)
+
+                    # Download as text
+                    st.download_button(
+                        label="⬇️ Download Flashcards (.txt)",
+                        data=result,
+                        file_name="flashcards.txt",
+                        mime="text/plain",
+                    )
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please enter a topic or paste your notes.")
+
+# ======================================
+# TAB 9: PDF Q&A
+# ======================================
+
+with tab9:
+    st.markdown("Upload a **PDF** (textbook chapter, notes, paper) and ask any question about its content.")
+
+    if not GEMINI_KEY:
+        st.error("⚠️ GEMINI_API_KEY is required. Add it in Space Settings.")
+    else:
+        pdf_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+
+        if pdf_file:
+            # Extract text from PDF using PyMuPDF
+            if "pdf_text" not in st.session_state or st.session_state.get("pdf_name") != pdf_file.name:
+                with st.spinner("Reading PDF..."):
+                    try:
+                        pdf_bytes = pdf_file.read()
+                        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                        all_text = ""
+                        for page in doc:
+                            all_text += page.get_text()
+                        doc.close()
+
+                        # Limit to ~12,000 chars to stay within token limits
+                        MAX_CHARS = 12000
+                        if len(all_text) > MAX_CHARS:
+                            all_text = all_text[:MAX_CHARS] + "\n\n[...content truncated for length...]"
+
+                        st.session_state.pdf_text = all_text
+                        st.session_state.pdf_name = pdf_file.name
+                        st.session_state.pdf_qa_history = []
+                    except Exception as e:
+                        st.error(f"⚠️ Could not read PDF: {str(e)}")
+                        st.stop()
+
+            st.success(f"✅ **{pdf_file.name}** loaded — {len(st.session_state.pdf_text):,} characters extracted.")
+
+            # Show a preview toggle
+            with st.expander("👁️ Preview extracted text"):
+                st.text(st.session_state.pdf_text[:1500] + "..." if len(st.session_state.pdf_text) > 1500 else st.session_state.pdf_text)
+
+            st.markdown("---")
+            st.markdown("### 💬 Ask questions about this PDF")
+
+            # Show Q&A history
+            if "pdf_qa_history" not in st.session_state:
+                st.session_state.pdf_qa_history = []
+
+            for item in st.session_state.pdf_qa_history:
+                with st.chat_message("user"):
+                    st.markdown(item["question"])
+                with st.chat_message("assistant"):
+                    st.markdown(item["answer"])
+
+            pdf_question = st.chat_input("Ask a question about the PDF...")
+
+            if pdf_question:
+                with st.chat_message("user"):
+                    st.markdown(pdf_question)
+
+                with st.chat_message("assistant"):
+                    answer_placeholder = st.empty()
+                    full_answer = ""
+                    try:
+                        pdf_prompt = f"""You are an AI assistant. Answer the question based ONLY on the document content provided below.
+If the answer is not in the document, say "I couldn't find that in the document."
+
+--- DOCUMENT CONTENT ---
+{st.session_state.pdf_text}
+--- END OF DOCUMENT ---
+
+Question: {pdf_question}
+
+Give a clear, concise answer with markdown formatting where helpful."""
+
+                        for chunk in gemini_stream(pdf_prompt):
+                            full_answer += chunk
+                            answer_placeholder.markdown(full_answer + "▌")
+                        answer_placeholder.markdown(full_answer)
+                    except Exception as e:
+                        full_answer = f"⚠️ Error: {str(e)}"
+                        answer_placeholder.markdown(full_answer)
+
+                st.session_state.pdf_qa_history.append({
+                    "question": pdf_question,
+                    "answer": full_answer,
+                })
+
+            if st.session_state.get("pdf_qa_history"):
+                if st.button("🗑️ Clear Q&A History"):
+                    st.session_state.pdf_qa_history = []
+                    st.rerun()
+        else:
+            st.info("👆 Upload a PDF to get started. Works great with textbook chapters, lecture notes, and research papers.")
+
+            st.markdown("**💡 Example questions you can ask after uploading:**")
+            example_qs = [
+                "Summarize the main points of this document",
+                "What are the key definitions mentioned?",
+                "Explain the concept discussed on page 2",
+                "List all the important formulas",
+            ]
+            for eq in example_qs:
+                st.markdown(f"- *{eq}*")
+
+# ======================================
+# TAB 10: STUDY PLANNER
+# ======================================
+
+with tab10:
+    st.markdown("Generate a **personalized study schedule** for any exam or set of topics.")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        exam_name = st.text_input("Exam / Subject Name", placeholder="Example: DBMS End-Sem, Data Structures Mid-Term...")
+    with col_b:
+        days_available = st.number_input("Days available to study", min_value=1, max_value=90, value=7, step=1)
+
+    topics_input = st.text_area(
+        "Topics to cover (one per line)",
+        placeholder="Example:\nRelational Algebra\nSQL Queries\nNormalization\nTransactions & ACID\nIndexing & Hashing",
+        height=150,
+    )
+
+    col_c, col_d = st.columns(2)
+    with col_c:
+        hours_per_day = st.slider("Study hours per day", min_value=1, max_value=12, value=4)
+    with col_d:
+        difficulty = st.selectbox("Your current level", ["Beginner", "Intermediate", "Advanced"])
+
+    include_revision = st.checkbox("Include revision days at the end", value=True)
+
+    if st.button("Generate Study Plan 📅", type="primary"):
+        if exam_name.strip() and topics_input.strip():
+            with st.spinner("Creating your personalized study plan..."):
+                try:
+                    topics_list = [t.strip() for t in topics_input.strip().splitlines() if t.strip()]
+                    revision_note = "Reserve the last 1–2 days for full revision and practice tests." if include_revision else ""
+
+                    prompt = f"""Create a detailed day-by-day study plan for an engineering student.
+
+Exam/Subject: {exam_name}
+Total days available: {days_available}
+Study hours per day: {hours_per_day} hours
+Student level: {difficulty}
+Topics to cover:
+{chr(10).join(f"- {t}" for t in topics_list)}
+{revision_note}
+
+Instructions:
+- Distribute topics logically across the {days_available} days
+- Harder topics should get more time
+- Each day should have a clear title and hourly breakdown
+- Include short breaks (e.g., 10 min every hour)
+- Add a motivational tip at the end of each day
+- {revision_note}
+
+Format using markdown with:
+- ## Day X: [Focus Topic]
+- A table or bullet list of hourly slots
+- A 💡 tip at the end of each day
+- A final **Summary Table** at the end showing all days and topics"""
+
+                    result = gemini_generate(prompt)
+                    st.markdown("---")
+                    st.markdown(f"### 📅 Study Plan for **{exam_name}**")
+                    st.markdown(result)
+
+                    st.download_button(
+                        label="⬇️ Download Study Plan (.txt)",
+                        data=result,
+                        file_name=f"study_plan_{exam_name.replace(' ', '_')}.txt",
+                        mime="text/plain",
+                    )
+                except Exception as e:
+                    st.error(f"⚠️ Error: {str(e)}")
+        else:
+            st.warning("Please fill in the exam name and at least one topic.")
 
 # ==========================================
 # FOOTER
