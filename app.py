@@ -263,7 +263,7 @@ HF_TOKEN   = os.getenv("HF_TOKEN")
 NEWS_KEY   = os.getenv("NEWS_API_KEY")
 
 CHAT_MODEL      = "gemini-2.5-flash"
-IMAGE_GEN_MODEL = "gemini-2.0-flash-exp"
+IMAGE_GEN_MODEL = "gemini-2.0-flash"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
 
 # Support both old (AIzaSy...) and new (AQ....) Gemini API key formats
@@ -355,40 +355,28 @@ def gemini_generate(prompt):
 
 
 def gemini_generate_image(prompt):
-    """Generate image using gemini-2.0-flash-exp with image output modality."""
-    response = client.models.generate_content(
-        model=IMAGE_GEN_MODEL,
+    """Generate image using gemini-2.0-flash via legacy SDK (supports AQ. key)."""
+    model = genai_legacy.GenerativeModel(IMAGE_GEN_MODEL)
+    response = model.generate_content(
         contents=prompt,
-        config=types.GenerateContentConfig(
-            response_modalities=["TEXT", "IMAGE"],
-        ),
+        generation_config={"response_mime_type": "image/png"},
     )
+    # Try to extract image bytes from response parts
     for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            return part.inline_data.data  # already bytes
+        if hasattr(part, "inline_data") and part.inline_data:
+            data = part.inline_data.data
+            if isinstance(data, str):
+                return base64.b64decode(data)
+            return data
     return None
 
 
 def gemini_analyze_image(image_bytes, prompt):
-    """Analyze image using Gemini Vision."""
-    image = Image.open(io.BytesIO(image_bytes))
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    img_bytes = buf.getvalue()
-    try:
-        img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
-        response = client.models.generate_content(
-            model=IMAGE_VIS_MODEL,
-            contents=[prompt, img_part],
-        )
-        return response.text
-    except Exception:
-        # Legacy SDK fallback
-        model = genai_legacy.GenerativeModel(IMAGE_VIS_MODEL)
-        import PIL.Image as PILImage
-        pil_img = PILImage.open(io.BytesIO(image_bytes))
-        response = model.generate_content([prompt, pil_img])
-        return response.text
+    """Analyze image using Gemini Vision via legacy SDK (supports AQ. key)."""
+    pil_img = Image.open(io.BytesIO(image_bytes))
+    model = genai_legacy.GenerativeModel(IMAGE_VIS_MODEL)
+    response = model.generate_content([prompt, pil_img])
+    return response.text
 
 
 def section_header(icon, title, subtitle=""):
@@ -599,7 +587,7 @@ with tab2:
                         st.image(img_bytes, caption=img_prompt, use_container_width=True)
                         st.download_button("⬇️ Download Image", data=img_bytes, file_name="generated.png", mime="image/png")
                     else:
-                        st.warning("No image returned. Try a different prompt.")
+                        st.warning("⚠️ Image generation is not supported on the free Gemini API tier. The model returned text only. Try the **Concept Explainer** or **Image Analyzer** instead!")
                 except Exception as e:
                     st.error(f"⚠️ {e}")
         else:
