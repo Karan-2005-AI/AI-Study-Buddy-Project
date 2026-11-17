@@ -261,9 +261,9 @@ hr { border-color: var(--border) !important; margin: 1.25rem 0 !important; }
 HF_TOKEN = os.getenv("HF_TOKEN")
 NEWS_KEY = os.getenv("NEWS_API_KEY")
 
-CHAT_MODEL      = "gemini-2.5-flash"
+CHAT_MODEL      = "gemini-1.5-flash"
 IMAGE_GEN_MODEL = "gemini-2.0-flash"
-IMAGE_VIS_MODEL = "gemini-2.5-flash"
+IMAGE_VIS_MODEL = "gemini-1.5-flash"
 
 # ── Multi-key rotation ─────────────────────────────────────────────────────
 # Collect all keys — GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
@@ -345,9 +345,10 @@ def _is_quota_error(e):
 
 
 def gemini_stream(prompt, history=None):
-    """Stream response — auto-rotates key on quota error."""
-    max_attempts = len(GEMINI_KEYS) if GEMINI_KEYS else 1
-    for attempt in range(max_attempts):
+    """Stream response — auto-rotates key on quota/rate error."""
+    attempts = max(len(GEMINI_KEYS), 1)
+    last_exc  = None
+    for _ in range(attempts):
         try:
             model = _use_legacy()
             chat_history = []
@@ -356,34 +357,38 @@ def gemini_stream(prompt, history=None):
                     role = "user" if msg["role"] == "user" else "model"
                     chat_history.append({"role": role, "parts": [msg["content"]]})
             chat = model.start_chat(history=chat_history)
-            response = chat.send_message(prompt, stream=True)
-            for chunk in response:
+            resp = chat.send_message(prompt, stream=True)
+            for chunk in resp:
                 if chunk.text:
                     yield chunk.text
-            return  # success
+            return  # success — stop retrying
         except Exception as e:
-            if _is_quota_error(e) and len(GEMINI_KEYS) > 1:
-                _rotate_key()
-                continue
-            raise
+            last_exc = e
+            if len(GEMINI_KEYS) > 1:
+                _rotate_key()   # rotate on ANY error
+            else:
+                raise
+    if last_exc:
+        raise last_exc
 
 
 def gemini_generate(prompt):
-    """Generate response — auto-rotates key on quota error."""
-    max_attempts = len(GEMINI_KEYS) if GEMINI_KEYS else 1
-    last_err = None
-    for attempt in range(max_attempts):
+    """Generate response — auto-rotates key on quota/rate error."""
+    attempts = max(len(GEMINI_KEYS), 1)
+    last_exc  = None
+    for _ in range(attempts):
         try:
             model = _use_legacy()
-            response = model.generate_content(prompt)
-            return response.text
+            resp  = model.generate_content(prompt)
+            return resp.text
         except Exception as e:
-            last_err = e
-            if _is_quota_error(e) and len(GEMINI_KEYS) > 1:
-                _rotate_key()
-                continue
-            raise
-    raise last_err
+            last_exc = e
+            if len(GEMINI_KEYS) > 1:
+                _rotate_key()   # rotate on ANY error
+            else:
+                raise
+    if last_exc:
+        raise last_exc
 
 
 def gemini_generate_image(prompt):
