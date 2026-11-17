@@ -266,42 +266,46 @@ IMAGE_GEN_MODEL = "gemini-2.0-flash"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
 
 # ── Multi-key rotation ─────────────────────────────────────────────────────
-# Add up to 5 keys as GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
-# The app auto-rotates to the next key when a quota error is hit.
-_RAW_KEYS = [
-    os.getenv("GEMINI_API_KEY"),
-    os.getenv("GEMINI_API_KEY_2"),
-    os.getenv("GEMINI_API_KEY_3"),
-    os.getenv("GEMINI_API_KEY_4"),
-    os.getenv("GEMINI_API_KEY_5"),
+# Collect all keys — GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
+GEMINI_KEYS = [
+    k for k in [
+        os.getenv("GEMINI_API_KEY"),
+        os.getenv("GEMINI_API_KEY_2"),
+        os.getenv("GEMINI_API_KEY_3"),
+        os.getenv("GEMINI_API_KEY_4"),
+        os.getenv("GEMINI_API_KEY_5"),
+    ] if k
 ]
-GEMINI_KEYS = [k for k in _RAW_KEYS if k]  # remove None / empty
 
-if not GEMINI_KEYS:
-    GEMINI_KEY = None
-    client     = None
-else:
-    if "gemini_key_index" not in st.session_state:
-        st.session_state.gemini_key_index = 0
+# Always initialise index in session_state at top level
+if "gemini_key_index" not in st.session_state:
+    st.session_state.gemini_key_index = 0
 
-    def _current_key():
-        idx = st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)
-        return GEMINI_KEYS[idx]
+GEMINI_KEY = GEMINI_KEYS[st.session_state.gemini_key_index % len(GEMINI_KEYS)] if GEMINI_KEYS else None
 
-    def _rotate_key():
-        """Move to the next available key."""
-        st.session_state.gemini_key_index = (
-            st.session_state.get("gemini_key_index", 0) + 1
-        ) % len(GEMINI_KEYS)
-        genai_legacy.configure(api_key=_current_key())
-
-    GEMINI_KEY = _current_key()
+if GEMINI_KEY:
     genai_legacy.configure(api_key=GEMINI_KEY)
 
-    try:
-        client = genai.Client(api_key=GEMINI_KEY)
-    except Exception:
-        client = None
+client = None  # new SDK — not used (AQ. keys unsupported); kept for compat
+
+
+# ── Helper: get current active key (always at module level) ─────────────────
+def _current_key():
+    if not GEMINI_KEYS:
+        return None
+    idx = st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)
+    return GEMINI_KEYS[idx]
+
+
+def _rotate_key():
+    """Silently rotate to the next key and reconfigure the legacy SDK."""
+    if len(GEMINI_KEYS) <= 1:
+        return
+    st.session_state.gemini_key_index = (
+        st.session_state.get("gemini_key_index", 0) + 1
+    ) % len(GEMINI_KEYS)
+    new_key = _current_key()
+    genai_legacy.configure(api_key=new_key)
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -332,9 +336,13 @@ def _use_legacy(model_name=None):
 
 
 def _is_quota_error(e):
-    """Detect rate-limit / quota-exceeded errors."""
+    """Detect rate-limit / quota-exceeded / auth errors — trigger key rotation."""
     msg = str(e).lower()
-    return any(x in msg for x in ["429", "quota", "rate limit", "resource_exhausted", "too many requests"])
+    return any(x in msg for x in [
+        "429", "quota", "rate limit", "resource_exhausted",
+        "too many requests", "exhausted", "limit exceeded",
+        "503", "overloaded", "try again",
+    ])
 
 
 def gemini_stream(prompt, history=None):
