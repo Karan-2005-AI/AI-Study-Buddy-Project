@@ -258,26 +258,50 @@ hr { border-color: var(--border) !important; margin: 1.25rem 0 !important; }
 # API SETUP
 # ==========================================
 
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-HF_TOKEN   = os.getenv("HF_TOKEN")
-NEWS_KEY   = os.getenv("NEWS_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+NEWS_KEY = os.getenv("NEWS_API_KEY")
 
 CHAT_MODEL      = "gemini-2.5-flash"
 IMAGE_GEN_MODEL = "gemini-2.0-flash"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
 
-# Support both old (AIzaSy...) and new (AQ....) Gemini API key formats
-if GEMINI_KEY:
+# ── Multi-key rotation ─────────────────────────────────────────────────────
+# Add up to 5 keys as GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
+# The app auto-rotates to the next key when a quota error is hit.
+_RAW_KEYS = [
+    os.getenv("GEMINI_API_KEY"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3"),
+    os.getenv("GEMINI_API_KEY_4"),
+    os.getenv("GEMINI_API_KEY_5"),
+]
+GEMINI_KEYS = [k for k in _RAW_KEYS if k]  # remove None / empty
+
+if not GEMINI_KEYS:
+    GEMINI_KEY = None
+    client     = None
+else:
+    if "gemini_key_index" not in st.session_state:
+        st.session_state.gemini_key_index = 0
+
+    def _current_key():
+        idx = st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)
+        return GEMINI_KEYS[idx]
+
+    def _rotate_key():
+        """Move to the next available key."""
+        st.session_state.gemini_key_index = (
+            st.session_state.get("gemini_key_index", 0) + 1
+        ) % len(GEMINI_KEYS)
+        genai_legacy.configure(api_key=_current_key())
+
+    GEMINI_KEY = _current_key()
+    genai_legacy.configure(api_key=GEMINI_KEY)
+
     try:
         client = genai.Client(api_key=GEMINI_KEY)
     except Exception:
         client = None
-else:
-    client = None
-
-# Configure legacy SDK as fallback for new AQ. key format
-if GEMINI_KEY:
-    genai_legacy.configure(api_key=GEMINI_KEY)
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -298,60 +322,61 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # HELPER FUNCTIONS
 # ==========================================
 
-def _use_legacy():
-    """Use legacy SDK when new client fails (AQ. key format)."""
-    model = genai_legacy.GenerativeModel(
-        model_name=CHAT_MODEL,
+def _use_legacy(model_name=None):
+    """Return a legacy SDK GenerativeModel, always using the current active key."""
+    genai_legacy.configure(api_key=_current_key())
+    return genai_legacy.GenerativeModel(
+        model_name=model_name or CHAT_MODEL,
         system_instruction=SYSTEM_PROMPT,
     )
-    return model
+
+
+def _is_quota_error(e):
+    """Detect rate-limit / quota-exceeded errors."""
+    msg = str(e).lower()
+    return any(x in msg for x in ["429", "quota", "rate limit", "resource_exhausted", "too many requests"])
 
 
 def gemini_stream(prompt, history=None):
-    # Try new SDK first, fall back to legacy
-    try:
-        contents = []
-        if history:
-            for msg in history:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-        contents.append(types.Content(role="user", parts=[types.Part(text=prompt)]))
-        response = client.models.generate_content_stream(
-            model=CHAT_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-        )
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-    except Exception:
-        # Legacy SDK fallback
-        model = _use_legacy()
-        chat_history = []
-        if history:
-            for msg in history:
-                role = "user" if msg["role"] == "user" else "model"
-                chat_history.append({"role": role, "parts": [msg["content"]]})
-        chat = model.start_chat(history=chat_history)
-        response = chat.send_message(prompt, stream=True)
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
+    """Stream response — auto-rotates key on quota error."""
+    max_attempts = len(GEMINI_KEYS) if GEMINI_KEYS else 1
+    for attempt in range(max_attempts):
+        try:
+            model = _use_legacy()
+            chat_history = []
+            if history:
+                for msg in history:
+                    role = "user" if msg["role"] == "user" else "model"
+                    chat_history.append({"role": role, "parts": [msg["content"]]})
+            chat = model.start_chat(history=chat_history)
+            response = chat.send_message(prompt, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+            return  # success
+        except Exception as e:
+            if _is_quota_error(e) and len(GEMINI_KEYS) > 1:
+                _rotate_key()
+                continue
+            raise
 
 
 def gemini_generate(prompt):
-    # Try new SDK first, fall back to legacy
-    try:
-        response = client.models.generate_content(
-            model=CHAT_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-        )
-        return response.text
-    except Exception:
-        model = _use_legacy()
-        response = model.generate_content(prompt)
-        return response.text
+    """Generate response — auto-rotates key on quota error."""
+    max_attempts = len(GEMINI_KEYS) if GEMINI_KEYS else 1
+    last_err = None
+    for attempt in range(max_attempts):
+        try:
+            model = _use_legacy()
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            last_err = e
+            if _is_quota_error(e) and len(GEMINI_KEYS) > 1:
+                _rotate_key()
+                continue
+            raise
+    raise last_err
 
 
 def gemini_generate_image(prompt):
@@ -402,10 +427,15 @@ with st.sidebar:
     if not GEMINI_KEY:
         st.error("⚠️ Set **GEMINI_API_KEY** in Space secrets to start.")
         st.stop()
+    if not GEMINI_KEYS:
+        st.error("⚠️ No valid API key found.")
+        st.stop()
 
     # Quick stats
     chat_msgs  = len(st.session_state.get("messages", []))
     note_count = len(st.session_state.get("sticky_notes", []))
+    key_idx    = (st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)) + 1 if GEMINI_KEYS else 0
+    key_total  = len(GEMINI_KEYS)
     st.markdown(f"""
     <div style="display:flex; gap:8px; padding:8px 16px; margin-bottom:4px;">
         <div style="flex:1; background:rgba(79,70,229,0.15); border-radius:8px; padding:8px; text-align:center;">
@@ -415,6 +445,12 @@ with st.sidebar:
         <div style="flex:1; background:rgba(16,185,129,0.15); border-radius:8px; padding:8px; text-align:center;">
             <div style="font-size:18px; font-weight:700; color:#34d399;">{note_count}</div>
             <div style="font-size:10px; color:#94a3b8;">Notes</div>
+        </div>
+    </div>
+    <div style="padding:4px 16px 8px;">
+        <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3);
+                    border-radius:8px; padding:6px 10px; font-size:11px; color:#34d399; text-align:center;">
+            🔑 API Key {key_idx}/{key_total} active
         </div>
     </div>
     """, unsafe_allow_html=True)
