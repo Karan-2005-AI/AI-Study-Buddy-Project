@@ -261,9 +261,9 @@ hr { border-color: var(--border) !important; margin: 1.25rem 0 !important; }
 HF_TOKEN = os.getenv("HF_TOKEN")
 NEWS_KEY = os.getenv("NEWS_API_KEY")
 
-CHAT_MODEL      = "gemini-1.5-flash"
-IMAGE_GEN_MODEL = "gemini-2.0-flash"
-IMAGE_VIS_MODEL = "gemini-1.5-flash"
+CHAT_MODEL      = "models/gemini-1.5-flash"
+IMAGE_GEN_MODEL = "models/gemini-2.0-flash"
+IMAGE_VIS_MODEL = "models/gemini-1.5-flash"
 
 # ── Multi-key rotation ─────────────────────────────────────────────────────
 # Collect all keys — GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
