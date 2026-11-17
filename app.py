@@ -263,11 +263,8 @@ HF_TOKEN   = os.getenv("HF_TOKEN")
 NEWS_KEY   = os.getenv("NEWS_API_KEY")
 
 CHAT_MODEL      = "gemini-2.5-flash"
+IMAGE_GEN_MODEL = "gemini-2.0-flash-preview-image-generation"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
-
-HF_IMG_GEN_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-HF_IMG_CAP_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
-HF_VQA_URL     = "https://api-inference.huggingface.co/models/dandelin/vilt-b32-finetuned-vqa"
 
 # Support both old (AIzaSy...) and new (AQ....) Gemini API key formats
 if GEMINI_KEY:
@@ -357,37 +354,49 @@ def gemini_generate(prompt):
         return response.text
 
 
-def hf_headers():
-    if HF_TOKEN:
-        return {"Authorization": f"Bearer {HF_TOKEN}"}
-    return {}
+def gemini_generate_image(prompt):
+    """Generate image using Gemini image generation model."""
+    try:
+        response = client.models.generate_content(
+            model=IMAGE_GEN_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+            ),
+        )
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                return base64.b64decode(part.inline_data.data)
+    except Exception:
+        # Legacy SDK fallback
+        model = genai_legacy.GenerativeModel(IMAGE_GEN_MODEL)
+        response = model.generate_content(prompt)
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                return base64.b64decode(part.inline_data.data)
+    return None
 
 
-def hf_generate_image(prompt):
-    payload = {"inputs": prompt}
-    response = requests.post(HF_IMG_GEN_URL, headers=hf_headers(), json=payload, timeout=60)
-    if response.status_code == 200:
-        return response.content
-    raise RuntimeError(f"HF Image Generation failed ({response.status_code}): {response.text[:200]}")
-
-
-def hf_analyze_image(image_bytes, question=None):
-    if question and question.strip():
-        img_b64 = base64.b64encode(image_bytes).decode()
-        payload = {"inputs": {"image": img_b64, "question": question}}
-        response = requests.post(HF_VQA_URL, headers=hf_headers(), json=payload, timeout=30)
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list) and data:
-                return "\n".join(f"**{d.get('answer','?')}** (score: {d.get('score',0):.2f})" for d in data[:3])
-            return str(data)
-    response = requests.post(HF_IMG_CAP_URL, headers=hf_headers(), data=image_bytes, timeout=30)
-    if response.status_code == 200:
-        data = response.json()
-        if isinstance(data, list) and data:
-            return data[0].get("generated_text", str(data))
-        return str(data)
-    raise RuntimeError(f"HF Image Analysis failed ({response.status_code}): {response.text[:200]}")
+def gemini_analyze_image(image_bytes, prompt):
+    """Analyze image using Gemini Vision."""
+    image = Image.open(io.BytesIO(image_bytes))
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    img_bytes = buf.getvalue()
+    try:
+        img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+        response = client.models.generate_content(
+            model=IMAGE_VIS_MODEL,
+            contents=[prompt, img_part],
+        )
+        return response.text
+    except Exception:
+        # Legacy SDK fallback
+        model = genai_legacy.GenerativeModel(IMAGE_VIS_MODEL)
+        import PIL.Image as PILImage
+        pil_img = PILImage.open(io.BytesIO(image_bytes))
+        response = model.generate_content([prompt, pil_img])
+        return response.text
 
 
 def section_header(icon, title, subtitle=""):
@@ -476,7 +485,7 @@ st.markdown("""
         </div>
         <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
             <span class="badge badge-blue">Gemini 2.5 Flash</span>
-            <span class="badge badge-green">FLUX.1 Image Gen</span>
+            <span class="badge badge-green">Gemini Vision</span>
             <span class="badge badge-orange">25 Study Tools</span>
             <span class="badge badge-red">Free on HF Spaces</span>
         </div>
@@ -587,20 +596,23 @@ with tab1:
 # TAB 2: IMAGE GENERATOR
 # ==============================
 with tab2:
-    section_header("🎨", "Image Generator", "Generate images from text using FLUX.1-schnell on Hugging Face (free).")
+    section_header("🎨", "Image Generator", "Generate images from text descriptions using Google Gemini.")
     img_prompt = st.text_area("Describe the image", placeholder="A futuristic classroom with AI robots teaching students, digital art style", height=100)
     if st.button("Generate Image 🎨", type="primary"):
         if img_prompt.strip():
-            with st.spinner("Generating via Hugging Face FLUX.1-schnell..."):
+            with st.spinner("Generating image... this may take a moment ✨"):
                 try:
-                    img_bytes = hf_generate_image(img_prompt)
-                    st.image(img_bytes, caption=img_prompt, use_container_width=True)
-                    st.download_button("⬇️ Download Image", data=img_bytes, file_name="generated.png", mime="image/png")
+                    img_bytes = gemini_generate_image(img_prompt)
+                    if img_bytes:
+                        st.image(img_bytes, caption=img_prompt, use_container_width=True)
+                        st.download_button("⬇️ Download Image", data=img_bytes, file_name="generated.png", mime="image/png")
+                    else:
+                        st.warning("No image returned. Try a different prompt.")
                 except Exception as e:
                     st.error(f"⚠️ {e}")
         else:
             st.warning("Please enter a description.")
-    st.info("💡 Model: **FLUX.1-schnell** (black-forest-labs) via HF Inference API. Add `HF_TOKEN` secret for better rate limits.")
+    st.info("💡 Powered by **Gemini 2.0 Flash** image generation model.")
     st.markdown("**Example prompts:**")
     for ex in ["Neural network diagram, educational style", "Binary search tree visualization", "OSI model colorful infographic"]:
         st.code(ex, language=None)
@@ -609,21 +621,22 @@ with tab2:
 # TAB 3: IMAGE ANALYZER
 # ==============================
 with tab3:
-    section_header("📷", "Image Analyzer", "Upload any image and analyze it using BLIP captioning + ViLT VQA (Hugging Face, free).")
-    uf = st.file_uploader("Upload image", type=["png", "jpg", "jpeg", "webp"])
+    section_header("📷", "Image Analyzer", "Upload any image and ask Gemini Vision to analyze it.")
+    uf = st.file_uploader("Upload image", type=["png", "jpg", "jpeg", "webp", "gif"])
     if uf:
         st.image(uf, caption="Uploaded", use_container_width=True)
-        ap = st.text_input("Ask about this image (blank = auto-describe)", placeholder="What does this diagram show?")
+        ap = st.text_input("What do you want to know about this image?",
+                           value="Describe this image in detail and explain what it shows.")
         if st.button("Analyze 🔍", type="primary"):
-            with st.spinner("Analyzing via Hugging Face..."):
+            with st.spinner("Analyzing with Gemini Vision..."):
                 try:
-                    result = hf_analyze_image(uf.read(), ap)
-                    st.markdown("### Result")
+                    result = gemini_analyze_image(uf.read(), ap)
+                    st.markdown("### 🔍 Analysis Result")
                     st.markdown(result)
                 except Exception as e:
                     st.error(f"⚠️ {e}")
     else:
-        st.info("👆 Upload diagrams, handwritten notes, flowcharts, screenshots, etc.")
+        st.info("👆 Upload diagrams, handwritten notes, flowcharts, code screenshots, etc.")
 
 # ==============================
 # TAB 4: CONCEPT EXPLAINER
@@ -1768,7 +1781,7 @@ st.markdown("""
     <div style="margin-bottom:6px;">
         <span class="badge badge-blue">35 AI Features</span> &nbsp;
         <span class="badge badge-green">Gemini 2.5 Flash</span> &nbsp;
-        <span class="badge badge-orange">FLUX.1 Images</span> &nbsp;
+        <span class="badge badge-orange">Gemini Vision</span> &nbsp;
         <span class="badge badge-red">Free on HF Spaces</span>
     </div>
     Built with ❤️ by <b style="color:#94a3b8;">Karan Dewangan</b> &nbsp;·&nbsp;
