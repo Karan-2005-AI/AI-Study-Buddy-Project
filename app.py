@@ -7,7 +7,6 @@ import json
 import requests
 import pymupdf  # PyMuPDF
 from PIL import Image
-import google.generativeai as genai_legacy
 from google import genai
 from google.genai import types
 import pandas as pd
@@ -255,18 +254,17 @@ hr { border-color: var(--border) !important; margin: 1.25rem 0 !important; }
 """, unsafe_allow_html=True)
 
 # ==========================================
-# API SETUP
+# API SETUP — uses google-genai (new SDK) which supports AQ. keys
 # ==========================================
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 NEWS_KEY = os.getenv("NEWS_API_KEY")
 
-CHAT_MODEL      = "models/gemini-1.5-flash"
-IMAGE_GEN_MODEL = "models/gemini-2.0-flash"
-IMAGE_VIS_MODEL = "models/gemini-1.5-flash"
+# Model names for new google-genai SDK (no "models/" prefix needed)
+CHAT_MODEL      = "gemini-1.5-flash"
+IMAGE_VIS_MODEL = "gemini-1.5-flash"
 
 # ── Multi-key rotation ─────────────────────────────────────────────────────
-# Collect all keys — GEMINI_API_KEY, GEMINI_API_KEY_2 … GEMINI_API_KEY_5
 GEMINI_KEYS = [
     k for k in [
         os.getenv("GEMINI_API_KEY"),
@@ -276,33 +274,26 @@ GEMINI_KEYS = [
         os.getenv("GEMINI_API_KEY_5"),
     ] if k
 ]
-
-# GEMINI_KEY = first key (used only for sidebar check — actual calls use _current_key())
 GEMINI_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None
 
-# Configure legacy SDK with first key at startup
-if GEMINI_KEY:
-    genai_legacy.configure(api_key=GEMINI_KEY)
 
-client = None  # new SDK not used (AQ. keys unsupported)
-
-
-# ── Key rotation helpers (module-level, always available) ───────────────────
 def _current_key():
-    """Return whichever key is currently active."""
     if not GEMINI_KEYS:
         return None
-    idx = st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)
-    return GEMINI_KEYS[idx]
+    return GEMINI_KEYS[st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)]
 
 
 def _rotate_key():
-    """Silently move to the next key and reconfigure the SDK."""
-    if len(GEMINI_KEYS) <= 1:
-        return
-    current_idx = st.session_state.get("gemini_key_index", 0)
-    st.session_state.gemini_key_index = (current_idx + 1) % len(GEMINI_KEYS)
-    genai_legacy.configure(api_key=_current_key())
+    if len(GEMINI_KEYS) > 1:
+        st.session_state.gemini_key_index = (
+            st.session_state.get("gemini_key_index", 0) + 1
+        ) % len(GEMINI_KEYS)
+
+
+def _get_client():
+    """Always return a fresh client with the current active key."""
+    return genai.Client(api_key=_current_key())
+
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -323,49 +314,32 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # HELPER FUNCTIONS
 # ==========================================
 
-def _use_legacy(model_name=None):
-    """Return a legacy SDK GenerativeModel using the currently active key."""
-    key = _current_key() or GEMINI_KEY
-    if key:
-        genai_legacy.configure(api_key=key)
-    return genai_legacy.GenerativeModel(
-        model_name=model_name or CHAT_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-    )
-
-
-def _is_quota_error(e):
-    """Detect rate-limit / quota-exceeded / auth errors — trigger key rotation."""
-    msg = str(e).lower()
-    return any(x in msg for x in [
-        "429", "quota", "rate limit", "resource_exhausted",
-        "too many requests", "exhausted", "limit exceeded",
-        "503", "overloaded", "try again",
-    ])
-
-
 def gemini_stream(prompt, history=None):
-    """Stream response — auto-rotates key on quota/rate error."""
+    """Stream response — auto-rotates key on any error."""
     attempts = max(len(GEMINI_KEYS), 1)
-    last_exc  = None
+    last_exc = None
     for _ in range(attempts):
         try:
-            model = _use_legacy()
-            chat_history = []
+            client = _get_client()
+            contents = []
             if history:
                 for msg in history:
                     role = "user" if msg["role"] == "user" else "model"
-                    chat_history.append({"role": role, "parts": [msg["content"]]})
-            chat = model.start_chat(history=chat_history)
-            resp = chat.send_message(prompt, stream=True)
-            for chunk in resp:
+                    contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+            contents.append(types.Content(role="user", parts=[types.Part(text=prompt)]))
+            response = client.models.generate_content_stream(
+                model=CHAT_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+            for chunk in response:
                 if chunk.text:
                     yield chunk.text
-            return  # success — stop retrying
+            return
         except Exception as e:
             last_exc = e
             if len(GEMINI_KEYS) > 1:
-                _rotate_key()   # rotate on ANY error
+                _rotate_key()
             else:
                 raise
     if last_exc:
@@ -373,18 +347,22 @@ def gemini_stream(prompt, history=None):
 
 
 def gemini_generate(prompt):
-    """Generate response — auto-rotates key on quota/rate error."""
+    """Generate response — auto-rotates key on any error."""
     attempts = max(len(GEMINI_KEYS), 1)
-    last_exc  = None
+    last_exc = None
     for _ in range(attempts):
         try:
-            model = _use_legacy()
-            resp  = model.generate_content(prompt)
-            return resp.text
+            client = _get_client()
+            response = client.models.generate_content(
+                model=CHAT_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+            return response.text
         except Exception as e:
             last_exc = e
             if len(GEMINI_KEYS) > 1:
-                _rotate_key()   # rotate on ANY error
+                _rotate_key()
             else:
                 raise
     if last_exc:
@@ -392,27 +370,32 @@ def gemini_generate(prompt):
 
 
 def gemini_generate_image(prompt):
-    """Generate image using gemini-2.0-flash via legacy SDK (supports AQ. key)."""
-    model = genai_legacy.GenerativeModel(IMAGE_GEN_MODEL)
-    response = model.generate_content(
-        contents=prompt,
-        generation_config={"response_mime_type": "image/png"},
-    )
-    # Try to extract image bytes from response parts
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "inline_data") and part.inline_data:
-            data = part.inline_data.data
-            if isinstance(data, str):
-                return base64.b64decode(data)
-            return data
+    """Generate image — returns None gracefully if not supported on free tier."""
+    try:
+        client = _get_client()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+        )
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                return part.inline_data.data
+    except Exception:
+        pass
     return None
 
 
 def gemini_analyze_image(image_bytes, prompt):
-    """Analyze image using Gemini Vision via legacy SDK (supports AQ. key)."""
-    pil_img = Image.open(io.BytesIO(image_bytes))
-    model = genai_legacy.GenerativeModel(IMAGE_VIS_MODEL)
-    response = model.generate_content([prompt, pil_img])
+    """Analyze image using Gemini Vision."""
+    buf = io.BytesIO()
+    Image.open(io.BytesIO(image_bytes)).save(buf, format="PNG")
+    client = _get_client()
+    img_part = types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png")
+    response = client.models.generate_content(
+        model=IMAGE_VIS_MODEL,
+        contents=[prompt, img_part],
+    )
     return response.text
 
 
@@ -438,9 +421,6 @@ with st.sidebar:
 
     if not GEMINI_KEY:
         st.error("⚠️ Set **GEMINI_API_KEY** in Space secrets to start.")
-        st.stop()
-    if not GEMINI_KEYS:
-        st.error("⚠️ No valid API key found.")
         st.stop()
 
     # Quick stats
