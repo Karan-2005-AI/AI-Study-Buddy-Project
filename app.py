@@ -7,6 +7,7 @@ import json
 import requests
 import pymupdf  # PyMuPDF
 from PIL import Image
+import google.generativeai as genai_legacy
 from google import genai
 from google.genai import types
 import pandas as pd
@@ -268,7 +269,18 @@ HF_IMG_GEN_URL = "https://api-inference.huggingface.co/models/black-forest-labs/
 HF_IMG_CAP_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
 HF_VQA_URL     = "https://api-inference.huggingface.co/models/dandelin/vilt-b32-finetuned-vqa"
 
-client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
+# Support both old (AIzaSy...) and new (AQ....) Gemini API key formats
+if GEMINI_KEY:
+    try:
+        client = genai.Client(api_key=GEMINI_KEY)
+    except Exception:
+        client = None
+else:
+    client = None
+
+# Configure legacy SDK as fallback for new AQ. key format
+if GEMINI_KEY:
+    genai_legacy.configure(api_key=GEMINI_KEY)
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -289,30 +301,60 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # HELPER FUNCTIONS
 # ==========================================
 
-def gemini_stream(prompt, history=None):
-    contents = []
-    if history:
-        for msg in history:
-            role = "user" if msg["role"] == "user" else "model"
-            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=prompt)]))
-    response = client.models.generate_content_stream(
-        model=CHAT_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+def _use_legacy():
+    """Use legacy SDK when new client fails (AQ. key format)."""
+    model = genai_legacy.GenerativeModel(
+        model_name=CHAT_MODEL,
+        system_instruction=SYSTEM_PROMPT,
     )
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
+    return model
+
+
+def gemini_stream(prompt, history=None):
+    # Try new SDK first, fall back to legacy
+    try:
+        contents = []
+        if history:
+            for msg in history:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+        contents.append(types.Content(role="user", parts=[types.Part(text=prompt)]))
+        response = client.models.generate_content_stream(
+            model=CHAT_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        )
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+    except Exception:
+        # Legacy SDK fallback
+        model = _use_legacy()
+        chat_history = []
+        if history:
+            for msg in history:
+                role = "user" if msg["role"] == "user" else "model"
+                chat_history.append({"role": role, "parts": [msg["content"]]})
+        chat = model.start_chat(history=chat_history)
+        response = chat.send_message(prompt, stream=True)
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
 
 
 def gemini_generate(prompt):
-    response = client.models.generate_content(
-        model=CHAT_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-    )
-    return response.text
+    # Try new SDK first, fall back to legacy
+    try:
+        response = client.models.generate_content(
+            model=CHAT_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        )
+        return response.text
+    except Exception:
+        model = _use_legacy()
+        response = model.generate_content(prompt)
+        return response.text
 
 
 def hf_headers():
