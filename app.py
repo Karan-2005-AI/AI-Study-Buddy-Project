@@ -605,7 +605,7 @@ with tab1:
 # ==============================
 with tab2:
     section_header("🎨", "Image Generator", "Generate images from text descriptions using Google Gemini.")
-    img_prompt = st.text_area("Describe the image", placeholder="A futuristic classroom with AI robots teaching students, digital art style", height=100)
+    img_prompt = st.text_area("Describe the image", placeholder="A futuristic classroom with AI robots teaching students, digital art style", height=100, key="tab2_img_prompt")
     if st.button("Generate Image 🎨", type="primary"):
         if img_prompt.strip():
             with st.spinner("Generating image... this may take a moment ✨"):
@@ -634,7 +634,7 @@ with tab3:
     if uf:
         st.image(uf, caption="Uploaded", use_container_width=True)
         ap = st.text_input("What do you want to know about this image?",
-                           value="Describe this image in detail and explain what it shows.")
+                           value="Describe this image in detail and explain what it shows.", key="tab3_img_q")
         if st.button("Analyze 🔍", type="primary"):
             with st.spinner("Analyzing with Gemini Vision..."):
                 try:
@@ -651,8 +651,8 @@ with tab3:
 # ==============================
 with tab4:
     section_header("📚", "Concept Explainer", "Get a clear, structured explanation of any topic for engineering students.")
-    topic = st.text_input("Enter topic", placeholder="Machine Learning, Recursion, Dijkstra's Algorithm...")
-    detail = st.radio("Detail level", ["Brief overview", "Standard explanation", "In-depth with examples"], horizontal=True)
+    topic = st.text_input("Enter topic", placeholder="Machine Learning, Recursion, Dijkstra's Algorithm...", key="tab4_topic")
+    detail = st.radio("Detail level", ["Brief overview", "Standard explanation", "In-depth with examples"], horizontal=True, key="tab4_detail")
     if st.button("Explain ✨", type="primary"):
         if topic.strip():
             with st.spinner("Explaining..."):
@@ -674,8 +674,8 @@ Use markdown formatting.""")
 # ==============================
 with tab5:
     section_header("📝", "Notes Summarizer", "Paste lengthy study notes and get a concise bullet-point summary.")
-    notes = st.text_area("Paste your notes", height=250, placeholder="Paste your study notes here...")
-    smode = st.radio("Summary style", ["Bullet points", "Paragraph summary", "Key terms only", "Mind map style"], horizontal=True)
+    notes = st.text_area("Paste your notes", height=250, placeholder="Paste your study notes here...", key="tab5_notes")
+    smode = st.radio("Summary style", ["Bullet points", "Paragraph summary", "Key terms only", "Mind map style"], horizontal=True, key="tab5_smode")
     if st.button("Summarize 📋", type="primary"):
         if notes.strip():
             with st.spinner("Summarizing..."):
@@ -733,7 +733,7 @@ with tab7:
     cc1, cc2 = st.columns([1, 3])
     language = cc1.selectbox("Language", ["Python", "C", "C++", "Java", "JavaScript", "SQL", "TypeScript", "Go", "Rust", "Other"])
     problem  = cc2.text_area("Describe problem", height=100, placeholder="Write a program to find the factorial using recursion...")
-    code_mode = st.radio("Mode", ["Write new code", "Explain existing code", "Optimize code"], horizontal=True)
+    code_mode = st.radio("Mode", ["Write new code", "Explain existing code", "Optimize code"], horizontal=True, key="tab7_code_mode")
     if st.button("Solve 🔧", type="primary"):
         if problem.strip():
             with st.spinner("Processing..."):
@@ -764,8 +764,8 @@ Use proper markdown code blocks.""")
 # ==============================
 with tab8:
     section_header("🃏", "Flashcard Generator", "Generate Q&A flashcards from any topic or notes for quick revision.")
-    fc_mode  = st.radio("Source", ["A Topic", "My Notes"], horizontal=True)
-    fc_input = st.text_input("Enter topic", placeholder="Operating Systems, Linked Lists...") if fc_mode == "A Topic" else st.text_area("Paste notes", height=180)
+    fc_mode  = st.radio("Source", ["A Topic", "My Notes"], horizontal=True, key="tab8_fc_mode")
+    fc_input = st.text_input("Enter topic", placeholder="Operating Systems, Linked Lists...", key="tab8_fc_topic") if fc_mode == "A Topic" else st.text_area("Paste notes", height=180, key="tab8_fc_notes")
     fc1, fc2 = st.columns(2)
     fc_count = fc1.slider("Number of cards", 5, 20, 10, 5)
     fc_style = fc2.selectbox("Card style", ["Q&A (Question & Answer)", "Term & Definition", "Fill in the blank"])
@@ -853,12 +853,12 @@ with tab10:
     pc1, pc2 = st.columns(2)
     exam_name     = pc1.text_input("Exam / Subject", placeholder="DBMS End-Sem, Data Structures Mid-Term...")
     days_avail    = pc2.number_input("Days available", min_value=1, max_value=90, value=7)
-    topics_input  = st.text_area("Topics (one per line)", height=130, placeholder="Relational Algebra\nSQL Queries\nNormalization")
+    topics_input  = st.text_area("Topics (one per line)", height=130, placeholder="Relational Algebra\nSQL Queries\nNormalization", key="tab10_topics")
     pc3, pc4, pc5 = st.columns(3)
     hours_pd   = pc3.slider("Hours/day", 1, 12, 4)
     difficulty = pc4.selectbox("Your level", ["Beginner", "Intermediate", "Advanced"])
     plan_style = pc5.selectbox("Plan style", ["Detailed hourly", "Topic-wise blocks", "Flexible goals"])
-    inc_rev    = st.checkbox("Include revision days", value=True)
+    inc_rev    = st.checkbox("Include revision days", value=True, key="tab10_inc_rev")
     if st.button("Generate Plan 📅", type="primary"):
         if exam_name.strip() and topics_input.strip():
             with st.spinner("Building plan..."):
@@ -917,7 +917,7 @@ Text:\n{trans_text}""")
 # ==============================
 with tab12:
     section_header("🗺️", "Mind Map Generator", "Visualize any topic as a structured text mind map.")
-    mm_topic = st.text_input("Topic", placeholder="Machine Learning, Database Management, Thermodynamics...")
+    mm_topic = st.text_input("Topic", placeholder="Machine Learning, Database Management, Thermodynamics...", key="tab12_mm_topic")
     md1, md2 = st.columns(2)
     mm_depth = md1.radio("Depth", ["2 levels", "3 levels", "4 levels"], horizontal=True)
     mm_focus = md2.text_input("Focus area (optional)", placeholder="Focus on algorithms only...")
@@ -974,7 +974,7 @@ Use clear markdown.""")
 # ==============================
 with tab14:
     section_header("🎙️", "Speech Tools", "Speech-to-Text and Text-to-Speech powered by the browser's Web Speech API.")
-    smode = st.radio("Mode", ["🎙️ Speech to Text", "🔊 Text to Speech"], horizontal=True)
+    smode = st.radio("Mode", ["🎙️ Speech to Text", "🔊 Text to Speech"], horizontal=True, key="tab14_smode")
 
     if smode == "🎙️ Speech to Text":
         st.info("Uses your browser's built-in microphone. Works best in Chrome/Edge.")
@@ -1013,7 +1013,7 @@ with tab14:
         </script>""", height=300)
 
     else:
-        tts_text = st.text_area("Text to speak", height=150, placeholder="Paste study notes, formula explanations...")
+        tts_text = st.text_area("Text to speak", height=150, placeholder="Paste study notes, formula explanations...", key="tab14_tts_text")
         t1, t2, t3 = st.columns(3)
         tts_rate  = t1.slider("Speed", 0.5, 2.0, 1.0, 0.1)
         tts_pitch = t2.slider("Pitch", 0.5, 2.0, 1.0, 0.1)
@@ -1098,7 +1098,7 @@ with tab16:
     nc1, nc2 = st.columns([2, 1])
     news_topic  = nc1.text_input("Search topic", placeholder="Artificial Intelligence, Python, Space, Climate...")
     news_count  = nc2.slider("Items", 3, 10, 5)
-    news_source = st.radio("Source", ["AI Summary (Gemini)", "Live News (NewsAPI key required)"], horizontal=True)
+    news_source = st.radio("Source", ["AI Summary (Gemini)", "Live News (NewsAPI key required)"], horizontal=True, key="tab16_news_source")
     if st.button("Get News 📰", type="primary"):
         if news_topic.strip():
             if news_source == "AI Summary (Gemini)":
@@ -1146,7 +1146,7 @@ with tab17:
     db1, db2 = st.columns([1, 3])
     debug_lang  = db1.selectbox("Language", ["Python","C","C++","Java","JavaScript","SQL","Other"], key="debug_lang")
     debug_error = db2.text_input("Error message (optional)", placeholder="Paste the exception/error message here...")
-    broken_code = st.text_area("Broken code", height=220, placeholder="# Paste buggy code here...")
+    broken_code = st.text_area("Broken code", height=220, placeholder="# Paste buggy code here...", key="tab17_broken_code")
     if st.button("Debug 🐛", type="primary"):
         if broken_code.strip():
             with st.spinner("Analyzing bugs..."):
@@ -1174,7 +1174,7 @@ with tab18:
     from_lang = cv1.selectbox("From", ["Python","C","C++","Java","JavaScript","TypeScript","Go","Rust","SQL"], key="from_lang")
     to_lang   = cv2.selectbox("To",   ["Java","Python","C++","C","JavaScript","TypeScript","Go","Rust","SQL"], key="to_lang")
     add_cmt   = cv3.checkbox("Add detailed inline comments", value=True)
-    src_code  = st.text_area("Source code", height=220, placeholder="# Paste source code here...")
+    src_code  = st.text_area("Source code", height=220, placeholder="# Paste source code here...", key="tab18_src_code")
     if st.button("Convert 🔄", type="primary"):
         if src_code.strip():
             with st.spinner(f"Converting {from_lang} → {to_lang}..."):
@@ -1199,7 +1199,7 @@ with tab19:
     fw_map = {"Python":["pytest","unittest"],"Java":["JUnit 5","JUnit 4"],"JavaScript":["Jest","Mocha"],"C++":["Google Test","Catch2"],"Go":["testing (built-in)"]}
     test_fw   = ut1.selectbox("Framework", fw_map.get(test_lang,["Default"]))
     test_desc = ut2.text_input("What does this function do?", placeholder="Calculates factorial recursively...")
-    fn_code   = st.text_area("Function / class", height=200, placeholder="# Paste function here...")
+    fn_code   = st.text_area("Function / class", height=200, placeholder="# Paste function here...", key="tab19_fn_code")
     if st.button("Generate Tests 🧪", type="primary"):
         if fn_code.strip():
             with st.spinner("Writing tests..."):
@@ -1247,12 +1247,12 @@ Include definitions, examples, diagrams (described), proper headings, conclusion
 # ==============================
 with tab21:
     section_header("✍️", "Essay / Report Writer", "Generate full essays, technical reports, or research summaries on any topic.")
-    essay_topic = st.text_input("Topic / Title", placeholder="Impact of AI on Healthcare, Climate Change Solutions...")
+    essay_topic = st.text_input("Topic / Title", placeholder="Impact of AI on Healthcare, Climate Change Solutions...", key="tab21_essay_topic")
     ew1, ew2, ew3 = st.columns(3)
     essay_type  = ew1.selectbox("Type", ["Academic Essay","Technical Report","Research Summary","Opinion Essay","Lab Report","Review Article"])
     essay_words = ew2.selectbox("Length", ["500 words","800 words","1000 words","1500 words","2000 words"])
     essay_level = ew3.selectbox("Level", ["Undergraduate (B.Tech)","School (12th)","Master's Level"])
-    essay_pts   = st.text_area("Key points to include (optional, one per line)", height=100,
+    essay_pts   = st.text_area("Key points to include (optional, one per line)", height=100, key="tab21_essay_pts",
                                placeholder="Definition\nApplications\nEthical concerns\nFuture prospects")
     if st.button("Write 📝", type="primary"):
         if essay_topic.strip():
@@ -1278,12 +1278,12 @@ Formal academic English. Use ## and ### headings.""")
 # ==============================
 with tab22:
     section_header("📌", "Presentation Outline", "Generate a full slide-by-slide outline with talking points and visual suggestions.")
-    pres_topic = st.text_input("Presentation topic", placeholder="Machine Learning, Blockchain, IoT in Healthcare...")
+    pres_topic = st.text_input("Presentation topic", placeholder="Machine Learning, Blockchain, IoT in Healthcare...", key="tab22_pres_topic")
     pp1, pp2, pp3 = st.columns(3)
     pres_slides   = pp1.number_input("Slides", 5, 30, 10)
     pres_duration = pp2.selectbox("Duration", ["5 min","10 min","15 min","20 min","30 min"])
     pres_audience = pp3.selectbox("Audience", ["College Students","Professors","Industry","School","General Public"])
-    pres_purpose  = st.radio("Purpose", ["Academic / Project","Seminar / Conference","Interview / Viva","Workshop"], horizontal=True)
+    pres_purpose  = st.radio("Purpose", ["Academic / Project","Seminar / Conference","Interview / Viva","Workshop"], horizontal=True, key="tab22_pres_purpose")
     if st.button("Generate Outline 📌", type="primary"):
         if pres_topic.strip():
             with st.spinner("Building outline..."):
@@ -1313,7 +1313,7 @@ with tab23:
     focus_min   = pt1.number_input("Focus (min)",      5,  90, 25, 5)
     short_brk   = pt2.number_input("Short break (min)", 1,  30,  5, 1)
     long_brk_af = pt3.number_input("Long break after", 2,   8,  4, 1)
-    pom_topic   = st.text_input("Studying:", placeholder="Data Structures – Linked Lists")
+    pom_topic   = st.text_input("Studying:", placeholder="Data Structures – Linked Lists", key="tab23_pom_topic")
 
     st.components.v1.html(f"""
     <div style="text-align:center;padding:24px;background:#1e293b;border-radius:16px;border:1px solid #334155;font-family:Inter,sans-serif;">
@@ -1445,7 +1445,7 @@ Give 3 short personalized encouraging study tips. Number them. 1-2 sentences eac
 # ==============================
 with tab26:
     section_header("✏️", "Grammar & Writing Checker", "Check grammar, improve writing style, and get rewrite suggestions.")
-    grammar_text = st.text_area("Paste your text", height=200, placeholder="Paste essay, assignment, email, or any text to check...")
+    grammar_text = st.text_area("Paste your text", height=200, placeholder="Paste essay, assignment, email, or any text to check...", key="tab26_grammar_text")
     gc1, gc2 = st.columns(2)
     check_mode  = gc1.selectbox("Check mode", ["Full grammar + style", "Grammar only", "Style & clarity only", "Academic writing", "Simplify writing"])
     formality   = gc2.selectbox("Target tone", ["Formal/Academic", "Professional", "Casual/Conversational", "Technical"])
@@ -1480,8 +1480,8 @@ with tab27:
     int_role    = ip1.text_input("Role / Position", placeholder="Software Engineer, Data Scientist, ML Engineer...")
     int_subject = ip2.text_input("Topic / Subject", placeholder="DSA, DBMS, ML, OS, System Design...")
     int_round   = ip3.selectbox("Interview round", ["Technical Round 1","Technical Round 2","HR Round","System Design","Viva / Oral Exam"])
-    int_level   = st.radio("Experience level", ["Fresher (0-1 yr)","Junior (1-3 yrs)","Mid (3-5 yrs)"], horizontal=True)
-    int_count   = st.slider("Number of questions", 5, 20, 10)
+    int_level   = st.radio("Experience level", ["Fresher (0-1 yr)","Junior (1-3 yrs)","Mid (3-5 yrs)"], horizontal=True, key="tab27_int_level")
+    int_count   = st.slider("Number of questions", 5, 20, 10, key="tab27_int_count")
     if st.button("Start Mock Interview 🎓", type="primary"):
         if int_role.strip() or int_subject.strip():
             with st.spinner("Preparing questions..."):
@@ -1509,7 +1509,7 @@ End with 5 **Interview Tips** specific to this role/round.""")
 # ==============================
 with tab28:
     section_header("🔢", "Math Problem Solver", "Paste any math problem and get a complete step-by-step solution.")
-    math_problem = st.text_area("Enter your math problem", height=150,
+    math_problem = st.text_area("Enter your math problem", height=150, key="tab28_math_problem",
                                 placeholder="Example: Solve x² + 5x + 6 = 0\nOr: Integrate x²·sin(x) dx\nOr: Find the eigenvalues of [[2,1],[1,2]]")
     ms1, ms2 = st.columns(2)
     math_level  = ms1.selectbox("Level", ["Class 10-12","Engineering Year 1-2","Engineering Year 3-4","Competitive Exam"])
@@ -1540,7 +1540,7 @@ Use LaTeX notation in plain text (e.g. x^2, sqrt(x), integral). Use markdown."""
 # ==============================
 with tab29:
     section_header("📖", "Dictionary & Thesaurus", "Look up definitions, synonyms, antonyms, etymology, and usage examples.")
-    dict_word = st.text_input("Enter a word or phrase", placeholder="photosynthesis, algorithm, serendipity...")
+    dict_word = st.text_input("Enter a word or phrase", placeholder="photosynthesis, algorithm, serendipity...", key="tab29_dict_word")
     dw1, dw2 = st.columns(2)
     dict_mode   = dw1.selectbox("Lookup type", ["Full definition + thesaurus","Definition only","Synonyms & antonyms","Etymology & origin","Usage examples","Technical meaning (CS/Engineering)"])
     dict_simple = dw2.checkbox("Explain simply (ELI5 style)", value=False)
@@ -1679,7 +1679,7 @@ Include 5-7 items. Format nicely with emojis and markdown.""")
 # ==============================
 with tab33:
     section_header("🔍", "Research Paper Finder", "Get AI-summarized research directions, key papers, and study resources on any topic.")
-    res_topic = st.text_input("Research topic", placeholder="Transformer architecture, Quantum Computing, CRISPR gene editing...")
+    res_topic = st.text_input("Research topic", placeholder="Transformer architecture, Quantum Computing, CRISPR gene editing...", key="tab33_res_topic")
     rf1, rf2  = st.columns(2)
     res_field = rf1.selectbox("Field", ["Computer Science","AI / Machine Learning","Electronics","Mechanical","Civil","Biotechnology","Physics","Chemistry","Economics","General Science"])
     res_depth = rf2.selectbox("Detail level", ["Overview (5 min read)","Detailed (10 min read)","Deep dive (research level)"])
@@ -1709,7 +1709,7 @@ Use markdown with clear headings.""")
 # ==============================
 with tab34:
     section_header("📃", "Plagiarism & Originality Advisor", "Get suggestions to make your writing more original and avoid plagiarism issues.")
-    plag_text = st.text_area("Paste your text", height=200,
+    plag_text = st.text_area("Paste your text", height=200, key="tab34_plag_text",
                              placeholder="Paste your essay, report, or assignment text here...")
     pa1, pa2 = st.columns(2)
     plag_mode = pa1.selectbox("Mode", ["Check originality & suggest rewrites","Paraphrase the text","Cite sources properly","Make text more unique"])
@@ -1741,12 +1741,12 @@ Use markdown.""")
 # ==============================
 with tab35:
     section_header("🧬", "Topic Learning Path", "Get a complete step-by-step learning roadmap for mastering any topic or skill.")
-    lp_topic = st.text_input("What do you want to learn?", placeholder="Machine Learning, Web Development, DSA, Competitive Programming...")
+    lp_topic = st.text_input("What do you want to learn?", placeholder="Machine Learning, Web Development, DSA, Competitive Programming...", key="tab35_lp_topic")
     lp1, lp2, lp3 = st.columns(3)
     lp_level    = lp1.selectbox("Current level", ["Complete beginner","Know the basics","Intermediate","Advanced"])
     lp_goal     = lp2.selectbox("Your goal", ["Get a job","Clear an exam","Academic project","Personal interest","Competitive coding","Research"])
     lp_duration = lp3.selectbox("Time available", ["2 weeks","1 month","3 months","6 months","1 year"])
-    lp_hrs      = st.slider("Hours per day", 1, 8, 2)
+    lp_hrs      = st.slider("Hours per day", 1, 8, 2, key="tab35_lp_hrs")
     if st.button("Generate Roadmap 🧬", type="primary"):
         if lp_topic.strip():
             with st.spinner("Building your learning path..."):
