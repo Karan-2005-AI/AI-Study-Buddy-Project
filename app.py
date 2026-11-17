@@ -263,7 +263,7 @@ HF_TOKEN   = os.getenv("HF_TOKEN")
 NEWS_KEY   = os.getenv("NEWS_API_KEY")
 
 CHAT_MODEL      = "gemini-2.5-flash"
-IMAGE_GEN_MODEL = "imagen-3.0-generate-002"
+IMAGE_GEN_MODEL = "gemini-2.0-flash-exp"
 IMAGE_VIS_MODEL = "gemini-2.5-flash"
 
 # Support both old (AIzaSy...) and new (AQ....) Gemini API key formats
@@ -355,19 +355,17 @@ def gemini_generate(prompt):
 
 
 def gemini_generate_image(prompt):
-    """Generate image using Imagen 3 via Google Gen AI SDK."""
-    # Imagen 3 uses generate_images, not generate_content
-    response = client.models.generate_images(
+    """Generate image using gemini-2.0-flash-exp with image output modality."""
+    response = client.models.generate_content(
         model=IMAGE_GEN_MODEL,
-        prompt=prompt,
-        config=types.GenerateImagesConfig(
-            number_of_images=1,
-            output_mime_type="image/png",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
         ),
     )
-    if response.generated_images:
-        img_bytes = response.generated_images[0].image.image_bytes
-        return img_bytes
+    for part in response.candidates[0].content.parts:
+        if part.inline_data is not None:
+            return part.inline_data.data  # already bytes
     return None
 
 
