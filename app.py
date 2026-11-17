@@ -277,20 +277,19 @@ GEMINI_KEYS = [
     ] if k
 ]
 
-# Always initialise index in session_state at top level
-if "gemini_key_index" not in st.session_state:
-    st.session_state.gemini_key_index = 0
+# GEMINI_KEY = first key (used only for sidebar check — actual calls use _current_key())
+GEMINI_KEY = GEMINI_KEYS[0] if GEMINI_KEYS else None
 
-GEMINI_KEY = GEMINI_KEYS[st.session_state.gemini_key_index % len(GEMINI_KEYS)] if GEMINI_KEYS else None
-
+# Configure legacy SDK with first key at startup
 if GEMINI_KEY:
     genai_legacy.configure(api_key=GEMINI_KEY)
 
-client = None  # new SDK — not used (AQ. keys unsupported); kept for compat
+client = None  # new SDK not used (AQ. keys unsupported)
 
 
-# ── Helper: get current active key (always at module level) ─────────────────
+# ── Key rotation helpers (module-level, always available) ───────────────────
 def _current_key():
+    """Return whichever key is currently active."""
     if not GEMINI_KEYS:
         return None
     idx = st.session_state.get("gemini_key_index", 0) % len(GEMINI_KEYS)
@@ -298,14 +297,12 @@ def _current_key():
 
 
 def _rotate_key():
-    """Silently rotate to the next key and reconfigure the legacy SDK."""
+    """Silently move to the next key and reconfigure the SDK."""
     if len(GEMINI_KEYS) <= 1:
         return
-    st.session_state.gemini_key_index = (
-        st.session_state.get("gemini_key_index", 0) + 1
-    ) % len(GEMINI_KEYS)
-    new_key = _current_key()
-    genai_legacy.configure(api_key=new_key)
+    current_idx = st.session_state.get("gemini_key_index", 0)
+    st.session_state.gemini_key_index = (current_idx + 1) % len(GEMINI_KEYS)
+    genai_legacy.configure(api_key=_current_key())
 
 SYSTEM_PROMPT = """You are AI Study Buddy, a friendly and intelligent AI assistant created to help engineering students learn better.
 
@@ -327,8 +324,10 @@ Always be helpful, conversational, and supportive — just like a real study bud
 # ==========================================
 
 def _use_legacy(model_name=None):
-    """Return a legacy SDK GenerativeModel, always using the current active key."""
-    genai_legacy.configure(api_key=_current_key())
+    """Return a legacy SDK GenerativeModel using the currently active key."""
+    key = _current_key() or GEMINI_KEY
+    if key:
+        genai_legacy.configure(api_key=key)
     return genai_legacy.GenerativeModel(
         model_name=model_name or CHAT_MODEL,
         system_instruction=SYSTEM_PROMPT,
